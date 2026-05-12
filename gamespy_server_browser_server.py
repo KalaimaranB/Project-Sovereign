@@ -36,7 +36,7 @@ import gamespy.gs_utility as gs_utils
 import other.utils as utils
 import dwc_config
 
-from multiprocessing.managers import BaseManager
+from gamespy_backend_server import GameSpyBackendServer
 
 logger = dwc_config.get_logger('GameSpyServerBrowserServer')
 
@@ -52,16 +52,7 @@ class ServerListFlags:
     HAS_FULL_RULES_FLAG = 128
 
 
-class GameSpyServerDatabase(BaseManager):
-    pass
 
-GameSpyServerDatabase.register("get_server_list")
-GameSpyServerDatabase.register("modify_server_list")
-GameSpyServerDatabase.register("find_servers")
-GameSpyServerDatabase.register("find_server_by_address")
-GameSpyServerDatabase.register("add_natneg_server")
-GameSpyServerDatabase.register("get_natneg_server")
-GameSpyServerDatabase.register("delete_natneg_server")
 
 address = dwc_config.get_ip_port('GameSpyServerBrowserServer')
 
@@ -111,12 +102,7 @@ class Session(LineReceiver):
         self.qr = qr
         self.own_server = None
         self.buffer = []
-
-        manager_address = dwc_config.get_ip_port('GameSpyManager')
-        manager_password = ""
-        self.server_manager = GameSpyServerDatabase(address=manager_address,
-                                                    authkey=manager_password)
-        self.server_manager.connect()
+        self.backend = GameSpyBackendServer()
 
     def log(self, level, msg, *args, **kwargs):
         """TODO: Use logger format"""
@@ -302,8 +288,7 @@ class Session(LineReceiver):
         return game_id
 
     def get_server_list(self, game, filter, fields, max_count):
-        results = self.server_manager.find_servers(game, filter, fields,
-                                                   max_count)
+        results = self.backend.find_servers(game, filter, fields, max_count)
         return results
 
     def generate_server_list_header_data(self, address, fields):
@@ -420,9 +405,9 @@ class Session(LineReceiver):
                  "Searching for server matching '%s' with the fields '%s'",
                  filter, fields)
 
-        self.server_list = self.server_manager.find_servers(
+        self.server_list = self.backend.find_servers(
             query_game, filter, fields, max_servers
-        )._getvalue()
+        )
 
         self.log(logging.DEBUG, "%s", "Found server(s):")
         self.log(logging.DEBUG, "%s", self.server_list)
@@ -467,8 +452,7 @@ class Session(LineReceiver):
             0,
             console
         ))
-        server = self.server_manager.find_server_by_address(ip,
-                                                            port)._getvalue()
+        server = self.backend.find_server_by_address(ip, port)
         self.log(logging.DEBUG,
                  "find_server_in_cache is returning: %s %s",
                  server, ip)
@@ -568,14 +552,14 @@ class Session(LineReceiver):
                          "Adding %d to natneg server list: %s",
                          natneg_session, server)
                 # Store info in backend so we can get it later in natneg
-                self.server_manager.add_natneg_server(natneg_session, server)
+                self.backend.add_natneg_server(natneg_session, server)
 
                 if self.own_server is not None:
                     self.log(logging.DEBUG,
                              "Adding %d to natneg server list: %s (self)",
                              natneg_session, self.own_server)
                     # Store info in backend so we can get it later in natneg
-                    self.server_manager.add_natneg_server(natneg_session,
+                    self.backend.add_natneg_server(natneg_session,
                                                           self.own_server)
 
                 # if self.qr is not None:

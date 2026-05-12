@@ -21,11 +21,12 @@
 from twisted.web import server, resource
 from twisted.internet import reactor
 from twisted.internet.error import ReactorAlreadyRunning
-from multiprocessing.managers import BaseManager
 import time
 import datetime
 import json
 import logging
+
+from gamespy.redis_cache import RedisGamespyCacheSync
 
 import other.utils as utils
 import dwc_config
@@ -33,10 +34,7 @@ import dwc_config
 logger = dwc_config.get_logger('InternalStatsServer')
 
 
-class GameSpyServerDatabase(BaseManager):
-    pass
-
-GameSpyServerDatabase.register("get_server_list")
+# Legacy multi-process class removed in favor of pure stateless Redis aggregation.
 
 
 class StatsPage(resource.Resource):
@@ -115,11 +113,8 @@ class InternalStatsServer(object):
         self.seconds_per_update = 60
 
     def start(self):
-        manager_address = dwc_config.get_ip_port('GameSpyManager')
-        manager_password = ""
-        self.server_manager = GameSpyServerDatabase(address=manager_address,
-                                                    authkey=manager_password)
-        self.server_manager.connect()
+        # Connect to modern stateless Redis aggregation instead of coupled legacy manager
+        self.cache = RedisGamespyCacheSync()
 
         site = server.Site(StatsPage(self))
         reactor.listenTCP(dwc_config.get_port('InternalStatsServer'), site)
@@ -135,10 +130,21 @@ class InternalStatsServer(object):
            self.next_update - time.time() <= 0:
             self.last_update = time.time()
             self.next_update = time.time() + self.seconds_per_update
-            self.server_list = self.server_manager.get_server_list() \
-                                                  ._getvalue()
-
-            logger.log(logging.DEBUG, "%s", self.server_list)
+            
+            # Direct stateless pull of the entire system fleet simultaneously
+            raw_list = self.cache.get_all_servers_for_game()
+            
+            # Transform flattened list back into the legacy nested grouped dict {gamename: [servers]}
+            # to satisfy the existing html/json rendering logic perfectly.
+            grouped = {}
+            for s in raw_list:
+                gname = s.get('gamename', 'unknown')
+                if gname not in grouped:
+                    grouped[gname] = []
+                grouped[gname].append(s)
+                
+            self.server_list = grouped
+            logger.log(logging.DEBUG, "Fetched %d servers across %d titles.", len(raw_list), len(grouped))
 
         return self.server_list
 

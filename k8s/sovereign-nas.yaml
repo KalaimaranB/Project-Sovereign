@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sovereign-nas
+  labels:
+    app: sovereign-nas
+spec:
+  replicas: 2 # Enable horizontal scaling redundancy!
+  selector:
+    matchLabels:
+      app: sovereign-nas
+  template:
+    metadata:
+      labels:
+        app: sovereign-nas
+    spec:
+      containers:
+      - name: nas
+        image: project_sovereign_master:latest
+        imagePullPolicy: Never # Utilizes local container engine cache built earlier
+        command: ["python", "nas_server.py"]
+        envFrom:
+        - configMapRef:
+            name: sovereign-config
+        ports:
+        - containerPort: 9000
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sovereign-nas
+spec:
+  selector:
+    app: sovereign-nas
+  type: LoadBalancer
+  ports:
+    - protocol: TCP
+      port: 9000
+      targetPort: 9000

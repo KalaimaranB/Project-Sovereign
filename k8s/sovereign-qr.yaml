@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sovereign-qr
+  labels:
+    app: sovereign-qr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sovereign-qr
+  template:
+    metadata:
+      labels:
+        app: sovereign-qr
+    spec:
+      containers:
+      - name: qr
+        image: project_sovereign_master:latest
+        imagePullPolicy: Never
+        command: ["python", "gamespy_qr_server.py"]
+        envFrom:
+        - configMapRef:
+            name: sovereign-config
+        ports:
+        - containerPort: 27900
+          protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sovereign-qr
+spec:
+  selector:
+    app: sovereign-qr
+  type: LoadBalancer
+  ports:
+    - protocol: UDP
+      port: 27900
+      targetPort: 27900

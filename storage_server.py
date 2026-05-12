@@ -22,9 +22,9 @@
 import os
 import random
 import logging
-import BaseHTTPServer
+import http.server as BaseHTTPServer
 import cgi
-import urlparse
+import urllib.parse as urlparse
 import sqlite3
 import xml.dom.minidom as minidom
 

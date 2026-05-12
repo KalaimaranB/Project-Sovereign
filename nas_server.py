@@ -22,11 +22,13 @@
 
 import logging
 import time
-import BaseHTTPServer
-import SocketServer
+import http.server as BaseHTTPServer
+import socketserver as SocketServer
 import traceback
+import threading
+import asyncio
 
-from gamespy import gs_database
+from gamespy.pg_database_sync import PostgresGamespyDatabaseSync
 from other import utils
 import dwc_config
 
@@ -168,7 +170,9 @@ def handle_ac(handler, addr, post):
 
     action = str(post["action"]).lower()
     command = handler.ac_actions.get(action, handle_ac_action)
-    ret = command(handler, gs_database.GamespyDatabase(), addr, post)
+    
+    # Access the high-speed centralized thread bridge from global server space
+    ret = command(handler, handler.server.db, addr, post)
 
     ret.update({"datetime": time.strftime("%Y%m%d%H%M%S")})
     handler.send_response(200)
@@ -259,8 +263,11 @@ class NasHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 
 class NasHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
-    """Threading HTTP server."""
-    pass
+    """Threading HTTP server with dedicated bridge backend."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Instantiate supreme universal bridge instance shared globally
+        self.db = PostgresGamespyDatabaseSync()
 
 
 class NasServer(object):

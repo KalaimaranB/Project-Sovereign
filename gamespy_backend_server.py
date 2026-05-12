@@ -51,11 +51,11 @@ import logging
 import time
 import ast
 
-from multiprocessing.managers import BaseManager
-from multiprocessing import freeze_support
 from other.sql import sql_commands, LIKE
 import other.utils as utils
 import dwc_config
+
+from gamespy.redis_cache import RedisGamespyCacheSync
 
 logger = dwc_config.get_logger('GameSpyManager')
 
@@ -68,64 +68,18 @@ class TokenType:
     TOKEN = 4
 
 
-class GameSpyServerDatabase(BaseManager):
-    pass
-
-
 class GameSpyBackendServer(object):
     def __init__(self):
-        self.server_list = {}
-        self.natneg_list = {}
-
-        GameSpyServerDatabase.register(
-            "get_server_list",
-            callable=lambda: self.server_list
-        )
-        GameSpyServerDatabase.register(
-            "find_servers",
-            callable=self.find_servers
-        )
-        GameSpyServerDatabase.register(
-            "find_server_by_address",
-            callable=self.find_server_by_address
-        )
-        GameSpyServerDatabase.register(
-            "find_server_by_local_address",
-            callable=self.find_server_by_local_address
-        )
-        GameSpyServerDatabase.register(
-            "update_server_list",
-            callable=self.update_server_list
-        )
-        GameSpyServerDatabase.register(
-            "delete_server",
-            callable=self.delete_server
-        )
-        GameSpyServerDatabase.register(
-            "add_natneg_server",
-            callable=self.add_natneg_server
-        )
-        GameSpyServerDatabase.register(
-            "get_natneg_server",
-            callable=self.get_natneg_server
-        )
-        GameSpyServerDatabase.register(
-            "delete_natneg_server",
-            callable=self.delete_natneg_server
-        )
+        """
+        Central interface realization for GameSpy query/reporting services.
+        No longer enforces heavy IPC process locks. Talks directly to distributed cache.
+        """
+        self.cache = RedisGamespyCacheSync()
 
     def start(self):
-        address = dwc_config.get_ip_port('GameSpyManager')
-        password = ""
-
-        logger.log(logging.INFO,
-                   "Started server on %s:%d...",
-                   address[0], address[1])
-
-        manager = GameSpyServerDatabase(address=address,
-                                        authkey=password)
-        server = manager.get_server()
-        server.serve_forever()
+        """NO-OP preserved for process harness backward compatibility. 
+        Actual realization is now a stateless helper logic bank."""
+        logger.log(logging.INFO, "Started local Redis-powered Backend library module.")
 
     def get_token(self, filters):
         """Complex example from Dungeon Explorer: Warriors of Ancient Arts
@@ -347,13 +301,14 @@ class GameSpyBackendServer(object):
 
     def find_servers(self, gameid, filters, fields, max_count):
         matched_servers = []
-
-        if gameid not in self.server_list:
+        
+        active_list = self.cache.get_all_servers_for_game(gameid)
+        if not active_list:
             return []
 
         start = time.time()
 
-        for server in self.server_list[gameid]:
+        for server in active_list:
             stop_search = False
 
             if filters:
@@ -487,137 +442,61 @@ class GameSpyBackendServer(object):
         return servers
 
     def update_server_list(self, gameid, session, value, console):
-        """Make sure the user isn't hosting multiple servers or there isn't
-        some left over server information that never got handled properly
-        (game crashed, etc)."""
+        """Refreshes dynamic server presence in backend Redis matrix with atomic eviction safety."""
         self.delete_server(gameid, session)
 
-        # If the game doesn't exist already, create a new list.
-        if gameid not in self.server_list:
-            self.server_list[gameid] = []
-
-        # Add new server
         value['__session__'] = session
         value['__console__'] = console
 
-        logger.log(logging.DEBUG,
-                   "Added %s to the server list for %s",
-                   value, gameid)
-        self.server_list[gameid].append(value)
-        logger.log(logging.DEBUG,
-                   "%s servers: %d",
-                   gameid, len(self.server_list[gameid]))
+        logger.log(logging.DEBUG, "Added %s to the server list for %s", value, gameid)
+        # Apply absolute 60 second TTL explicitly on upsert to prevent ghost artifacts
+        self.cache.upsert_server(gameid, session, value, ttl_seconds=60)
 
         return value
 
     def delete_server(self, gameid, session):
-        if gameid not in self.server_list:
-            # Nothing to do if no servers for that game even exist.
-            return
-
-        # Remove all servers hosted by the given session id.
-        count = len(self.server_list[gameid])
-        self.server_list[gameid] = [x for x in self.server_list[gameid]
-                                    if x['__session__'] != session]
-        count -= len(self.server_list[gameid])
-        logger.log(logging.DEBUG,
-                   "Deleted %d %s servers where session = %d",
-                   count, gameid, session)
+        self.cache.delete_server(gameid, session)
+        logger.log(logging.DEBUG, "Deleted %s server where session = %d", gameid, session)
 
     def find_server_by_address(self, ip, port, gameid=None):
-        if gameid is None:
-            # Search all servers
-            for gameid in self.server_list:
-                for server in self.server_list[gameid]:
-                    if server['publicip'] == ip and \
-                       (not port or server['publicport'] == str(port)):
-                        return server
-        else:
-            for server in self.server_list[gameid]:
-                if server['publicip'] == ip and \
-                   (not port or server['publicport'] == str(port)):
-                    return server
-
+        active_list = self.cache.get_all_servers_for_game(gameid)
+        for server in active_list:
+            if server['publicip'] == ip and (not port or server['publicport'] == str(port)):
+                 return server
         return None
 
     def find_server_by_local_address(self, publicip, localaddr, gameid=None):
         localip = localaddr[0]
         localport = localaddr[1]
-        localip_int_le = localaddr[2]
-        localip_int_be = localaddr[3]
 
-        def find_server(gameid):
-            if gameid not in self.server_list:
-                return None
+        active_list = self.cache.get_all_servers_for_game(gameid)
+        best_match = None
 
-            best_match = None
-
-            for server in self.server_list[gameid]:
-                logger.log(logging.DEBUG,
-                           "publicip: %s == %s ? %d localport: %s == %s ? %d",
-                           server['publicip'], publicip,
-                           server['publicip'] == publicip,
-                           server['localport'],
-                           str(localport),
-                           server['localport'] == str(localport))
-                if server['publicip'] == publicip:
-                    if server['localport'] == str(localport):
-                        best_match = server
-                        break
-
-                    for x in range(0, 10):
-                        s = 'localip%d' % x
-                        if s in server:
-                            if server[s] == localip:
-                                best_match = server
-
-                    if not localport and best_match is None:
-                        # Kinda hackish. This sometimes happens.
-                        # Assuming two clients aren't trying to connect from
-                        # the same IP, this might be safe. The server wasn't
-                        # verified to be the *correct* server, but it's on the
-                        # same IP so it has a chance of being correct. At
-                        # least make an attempt to establish the connection.
-                        best_match = server
-
-            if best_match is None:
-                logger.log(logging.DEBUG,
-                           "Couldn't find a match for %s",
-                           publicip)
-
-            return best_match
-
-        if gameid is None:
-            # Search all servers
-            for gameid in self.server_list:
-                return find_server(gameid)
-        else:
-            return find_server(gameid)
-
-        return None
+        for server in active_list:
+             if server['publicip'] == publicip:
+                 if server.get('localport') == str(localport):
+                     return server
+                 for x in range(0, 10):
+                     if server.get(f'localip{x}') == localip:
+                         best_match = server
+                 if not localport and best_match is None:
+                     best_match = server
+        return best_match
 
     def add_natneg_server(self, cookie, server):
-        if cookie not in self.natneg_list:
-            self.natneg_list[cookie] = []
-
         logger.log(logging.DEBUG, "Added natneg server %d", cookie)
-        self.natneg_list[cookie].append(server)
+        self.cache.add_natneg_server(cookie, server)
 
     def get_natneg_server(self, cookie):
-        if cookie in self.natneg_list:
-            return self.natneg_list[cookie]
-
-        return None
+        res = self.cache.get_natneg_servers(cookie)
+        return res if res else None
 
     def delete_natneg_server(self, cookie):
-        """TODO: Find a good time to prune the natneg server listing."""
-        if cookie in self.natneg_list:
-            del self.natneg_list[cookie]
+        self.cache.delete_natneg_server(cookie)
         logger.log(logging.DEBUG, "Deleted natneg server %d", cookie)
 
-
 if __name__ == '__main__':
-    freeze_support()
-
     backend_server = GameSpyBackendServer()
     backend_server.start()
+    # Hold daemon active temporarily to simulate old behaviour
+    while True: time.sleep(10)

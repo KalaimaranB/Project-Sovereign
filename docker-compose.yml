@@ -1,0 +1,157 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sovereign_db
+    restart: always
+    environment:
+      POSTGRES_USER: dwc_admin
+      POSTGRES_PASSWORD: insecure_dev_password
+      POSTGRES_DB: gamespy
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  redis:
+    image: redis:alpine
+    container_name: sovereign_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  sovereign_nas:
+    build: .
+    container_name: sovereign_nas
+    restart: always
+    command: python nas_server.py
+    environment:
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+      - REDIS_URL=redis://sovereign_redis:6379/0
+    ports:
+      - "9000:9000"
+    depends_on:
+      - postgres
+
+  sovereign_qr:
+    build: .
+    container_name: sovereign_qr
+    restart: always
+    command: python gamespy_qr_server.py
+    environment:
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+      - REDIS_URL=redis://sovereign_redis:6379/0
+    ports:
+      - "27900:27900/udp"
+    depends_on:
+      - postgres
+
+  sovereign_profile:
+    build: .
+    container_name: sovereign_profile
+    restart: always
+    command: python gamespy_profile_server.py
+    environment:
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+      - REDIS_URL=redis://sovereign_redis:6379/0
+    ports:
+      - "29900:29900"
+    depends_on:
+      - postgres
+
+  sovereign_natneg:
+    build: .
+    container_name: sovereign_natneg
+    restart: always
+    command: python gamespy_natneg_server.py
+    environment:
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+    ports:
+      - "27901:27901/udp"
+    depends_on:
+      - postgres
+
+  sovereign_browser:
+    build: .
+    container_name: sovereign_browser
+    restart: always
+    command: python gamespy_server_browser_server.py
+    environment:
+      - REDIS_URL=redis://sovereign_redis:6379/0
+    ports:
+      - "28910:28910"
+    depends_on:
+      - redis
+
+  sovereign_player_search:
+    build: .
+    container_name: sovereign_player_search
+    restart: always
+    command: python gamespy_player_search_server.py
+    environment:
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+    ports:
+      - "29901:29901"
+    depends_on:
+      - postgres
+
+  sovereign_gamestats:
+    build: .
+    container_name: sovereign_gamestats
+    restart: always
+    command: python gamespy_gamestats_server.py
+    environment:
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+    ports:
+      - "29920:29920"
+    depends_on:
+      - postgres
+
+  sovereign_dls1:
+    build: .
+    container_name: sovereign_dls1
+    restart: always
+    command: python dls1_server.py
+    ports:
+      - "9003:9003"
+
+  sovereign_storage:
+    build: .
+    container_name: sovereign_storage
+    restart: always
+    command: python storage_server.py
+    ports:
+      - "8000:8000"
+
+  sovereign_register:
+    build: .
+    container_name: sovereign_register
+    restart: always
+    command: python register_page.py
+    ports:
+      - "9998:9998"
+
+  sovereign_admin:
+    build: .
+    container_name: sovereign_admin
+    restart: always
+    command: python admin_page_server.py
+    ports:
+      - "9009:9009"
+
+  sovereign_internal_stats:
+    build: .
+    container_name: sovereign_internal_stats
+    restart: always
+    command: python internal_stats_server.py
+    ports:
+      - "9001:9001"
+
+  sovereign_stats_http:
+    build: .
+    container_name: sovereign_stats_http
+    restart: always
+    command: python gamestats_server_http.py
+    ports:
+      - "9002:9002"
+
+volumes:
+  postgres_data:

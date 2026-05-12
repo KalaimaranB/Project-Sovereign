@@ -30,9 +30,9 @@ from twisted.protocols.basic import LineReceiver
 from twisted.internet import reactor
 from twisted.internet.error import ReactorAlreadyRunning
 
-import gamespy.gs_database as gs_database
 import gamespy.gs_query as gs_query
 import gamespy.gs_utility as gs_utils
+from gamespy.pg_database_sync import PostgresGamespyDatabaseSync
 import other.utils as utils
 import dwc_config
 
@@ -73,7 +73,7 @@ class Gamestats(LineReceiver):
     def __init__(self, sessions, address):
         self.setRawMode()  # We're dealing with binary data so set to raw mode
 
-        self.db = gs_database.GamespyDatabase()
+        self.db = PostgresGamespyDatabaseSync("postgresql://dwc_admin:insecure_dev_password@localhost:5432/gamespy")
 
         self.sessions = sessions
         self.address = address
@@ -202,16 +202,16 @@ class Gamestats(LineReceiver):
         self.transport.write(bytes(msg))
 
     def perform_authp(self, data_parsed):
-        authtoken_parsed = gs_utils.parse_authtoken(data_parsed['authtoken'],
-                                                    self.db)
+        authtoken_parsed = self.db._call(gs_utils.parse_authtoken(data_parsed['authtoken'],
+                                                                 self.db.async_db))
         # print authtoken_parsed
 
         if "lid" in data_parsed:
             self.lid = data_parsed['lid']
 
         userid, profileid, gsbrcd, uniquenick = \
-            gs_utils.login_profile_via_parsed_authtoken(authtoken_parsed,
-                                                        self.db)
+            self.db._call(gs_utils.login_profile_via_parsed_authtoken(authtoken_parsed,
+                                                                     self.db.async_db))
 
         if profileid is not None:
             # Successfully logged in or created account, continue
@@ -405,8 +405,8 @@ class Gamestats(LineReceiver):
         key_len = len(key)
         output = bytearray(data.encode("ascii"))
 
-        if "\\final\\" in output:
-            end = output.index("\\final\\")
+        if b"\\final\\" in output:
+            end = output.index(b"\\final\\")
         else:
             end = len(output)
 

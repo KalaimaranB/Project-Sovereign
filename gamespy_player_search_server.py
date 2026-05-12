@@ -27,8 +27,8 @@ from twisted.protocols.basic import LineReceiver
 from twisted.internet import reactor
 from twisted.internet.error import ReactorAlreadyRunning
 
-import gamespy.gs_database as gs_database
 import gamespy.gs_query as gs_query
+from gamespy.pg_database_sync import PostgresGamespyDatabaseSync
 import other.utils as utils
 import dwc_config
 
@@ -67,7 +67,8 @@ class PlayerSearchFactory(Factory):
 class PlayerSearch(LineReceiver):
     def __init__(self, address):
         self.setRawMode()
-        self.db = gs_database.GamespyDatabase()
+        # Leveraging high-impact absolute universal proxy reuse (Zero refactor required!)
+        self.db = PostgresGamespyDatabaseSync("postgresql://dwc_admin:insecure_dev_password@localhost:5432/gamespy")
 
         self.address = address
         self.leftover = ""
@@ -86,7 +87,7 @@ class PlayerSearch(LineReceiver):
             commands, self.leftover = gs_query.parse_gamespy_message(data)
 
             for data_parsed in commands:
-                print data_parsed
+                print(data_parsed)
 
                 if data_parsed['__cmd__'] == "otherslist":
                     self.perform_otherslist(data_parsed)
@@ -101,7 +102,7 @@ class PlayerSearch(LineReceiver):
                        traceback.format_exc())
 
     def perform_otherslist(self, data_parsed):
-        """Reference: http://wiki.tockdom.com/wiki/MKWii_Network_Protocol/Server/gpsp.gs.nintendowifi.net
+        r"""Reference: http://wiki.tockdom.com/wiki/MKWii_Network_Protocol/Server/gpsp.gs.nintendowifi.net
 
         Example from: filtered-mkw-log-2014-01-01-ct1310.eth
         \otherslist\\o\146376154\uniquenick\2m0isbjmvRMCJ2i5321j
@@ -158,7 +159,7 @@ class PlayerSearch(LineReceiver):
         msg = gs_query.create_gamespy_message(msg_d)
 
         logger.log(logging.DEBUG, "SENDING: %s", msg)
-        self.transport.write(bytes(msg))
+        self.transport.write(msg.encode("ascii"))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sovereign-profile
+  labels:
+    app: sovereign-profile
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sovereign-profile
+  template:
+    metadata:
+      labels:
+        app: sovereign-profile
+    spec:
+      containers:
+      - name: profile
+        image: project_sovereign_master:latest
+        imagePullPolicy: Never
+        command: ["python", "gamespy_profile_server.py"]
+        envFrom:
+        - configMapRef:
+            name: sovereign-config
+        ports:
+        - containerPort: 29900
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sovereign-profile
+spec:
+  selector:
+    app: sovereign-profile
+  type: LoadBalancer
+  ports:
+    - protocol: TCP
+      port: 29900
+      targetPort: 29900

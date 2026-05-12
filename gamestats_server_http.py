@@ -22,15 +22,13 @@
 """
 
 import logging
-import urlparse
-import BaseHTTPServer
+import urllib.parse as urlparse
+import http.server as BaseHTTPServer
 import traceback
 import os
 import hashlib
 import base64
 
-import gamespy.gs_database as gs_database
-import gamespy.gs_utility as gs_utils
 import other.utils as utils
 import dwc_config
 
@@ -121,7 +119,6 @@ class GameStatsHTTPServer(BaseHTTPServer.HTTPServer):
     ]
 
     def __init__(self, server_address, RequestHandlerClass):
-        # self.db = gs_database.GamespyDatabase()
         self.gamelist = self.parse_key_file()
 
         BaseHTTPServer.HTTPServer.__init__(self, server_address,
@@ -130,7 +127,7 @@ class GameStatsHTTPServer(BaseHTTPServer.HTTPServer):
     def parse_key_file(self, filename="gamestats.cfg"):
         gamelist = {}
 
-        with open(filename) as config_file:
+        with open(filename, encoding='latin-1') as config_file:
             for line in config_file.readlines():
                 line, sep, comment = line.partition("#")
 
@@ -175,7 +172,7 @@ class GameStatsHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def str_to_dict(self, str):
         ret = urlparse.parse_qs(urlparse.urlparse(str).query)
 
-        for k, v in ret.iteritems():
+        for k, v in ret.items():
             ret[k] = v[0]
 
         return ret

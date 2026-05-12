@@ -60,11 +60,11 @@ class Transaction(object):
                                  statement.replace('?', '%s') % parameters)
 
         timeStart = time.time()
-        clockStart = time.clock()
+        clockStart = time.process_time()
 
         cursor.execute(statement, parameters)
 
-        clockEnd = time.clock()
+        clockEnd = time.process_time()
         timeEnd = time.time()
         timeDiff = timeEnd - timeStart
 
@@ -103,7 +103,7 @@ class Transaction(object):
 
 class GamespyDatabase(object):
     def __init__(self, filename='gpcm.db'):
-        self.conn = sqlite3.connect(filename, timeout=10.0)
+        self.conn = sqlite3.connect(filename, timeout=10.0, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
 
         # self.initialize_database()
@@ -189,7 +189,7 @@ class GamespyDatabase(object):
         if not row:
             return None
 
-        return dict(itertools.izip(row.keys(), row))
+        return dict(zip(row.keys(), row))
 
     # User functions
     def get_next_free_profileid(self):
@@ -294,7 +294,7 @@ class GamespyDatabase(object):
             # TODO: Replace with something stronger later, although it's
             # overkill for the NDS.
             md5 = hashlib.md5()
-            md5.update(password)
+            md5.update(password.encode('latin-1') if isinstance(password, str) else password)
             password = md5.hexdigest()
 
             with Transaction(self.conn) as tx:

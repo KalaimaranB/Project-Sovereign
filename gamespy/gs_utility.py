@@ -34,7 +34,7 @@ def generate_secret_keys(filename="gslist.cfg"):
     TODO: Parse the config file in a cleaner way. (ex: using CSV module)
     """
     secret_key_list = {}
-    with open(filename) as key_file:
+    with open(filename, encoding='latin-1') as key_file:
         for line in key_file.readlines():
             # name = line[:54].strip()
             # Probably won't do anything with the name for now.
@@ -52,17 +52,17 @@ def base64_encode(input):
     GameSpy uses a slightly modified version of base64 which replaces
     +/= with []_
     """
-    output = base64.b64encode(input).replace('+', '[') \
-                                    .replace('/', ']') \
-                                    .replace('=', '_')
+    output = base64.b64encode(input).replace(b'+', b'[') \
+                                    .replace(b'/', b']') \
+                                    .replace(b'=', b'_')
     return output
 
 
 def base64_decode(input):
     """Decode input in base64 using GameSpy variant."""
-    output = base64.b64decode(input.replace('[', '+')
-                                   .replace(']', '/')
-                                   .replace('_', '='))
+    output = base64.b64decode(input.replace(b'[', b'+')
+                                   .replace(b']', b'/')
+                                   .replace(b'_', b'='))
     return output
 
 
@@ -79,7 +79,7 @@ def rc4_encrypt(_key, _data):
         return
 
     # Key-scheduling algorithm
-    S = range(0x100)
+    S = list(range(0x100))
 
     j = 0
     for i in range(0x100):
@@ -117,46 +117,36 @@ def prepare_rc4_base64(_key, _data):
 
     data.append(0)
 
-    return base64.b64encode(buffer(data))
+    return base64.b64encode(data)
 
 
-def parse_authtoken(authtoken, db):
+async def parse_authtoken(authtoken, db):
     """Get the login data from nas.nintendowifi.net/ac from an authtoken"""
-    return db.get_nas_login(authtoken)
+    return await db.get_nas_login(authtoken)
 
 
-def login_profile_via_parsed_authtoken(authtoken_parsed, db):
+async def login_profile_via_parsed_authtoken(authtoken_parsed, db):
     """Return login profile via parsed authtoken.
 
     authtoken_parsed MUST HAVE userid field and can't be None!
     """
     if authtoken_parsed is None or 'userid' not in authtoken_parsed:
         return None, None, None, None
+    
     console = 0
-    userid = authtoken_parsed['userid']
+    userid = int(authtoken_parsed.get('userid', 0))
+    password = authtoken_parsed.get('passwd', '')
+    gsbrcd = authtoken_parsed.get('gsbrcd', '')
+    uniquenick = authtoken_parsed.get('uniquenick', '')
+    console = int(authtoken_parsed.get('console', 0))
+    csnum = authtoken_parsed.get('csnum', '')
+    cfc = authtoken_parsed.get('cfc', '')
+    bssid = authtoken_parsed.get('bssid', '')
+    devname = authtoken_parsed.get('devname', b'')
+    birth = authtoken_parsed.get('birth', '')
+    gameid = authtoken_parsed.get('gameid', '')
+    macadr = authtoken_parsed.get('macadr', '')
 
-    csnum = authtoken_parsed.get('csnum', '')      # Wii: Serial number
-    cfc = authtoken_parsed.get('cfc', '')          # Wii: Friend code
-    bssid = authtoken_parsed.get('bssid', '')      # NDS: Wifi network's BSSID
-    devname = authtoken_parsed.get('devname', '')  # NDS: Device name
-    birth = authtoken_parsed.get('birth', '')      # NDS: User's birthday
-
-    # The Wii does not use passwd, so take another uniquely generated string
-    # as the password.
-    # if "passwd" in authtoken_parsed:
-    #     password = authtoken_parsed['passwd']
-    # else:
-    #     password = authtoken_parsed['gsbrcd']
-    #     console = 1
-
-    if "passwd" not in authtoken_parsed:
-        console = 1
-
-    password = authtoken_parsed['gsbrcd']
-    gsbrcd = authtoken_parsed['gsbrcd']
-    gameid = gsbrcd[:4]
-    macadr = authtoken_parsed['macadr']
-    uniquenick = utils.base32_encode(int(userid)) + gsbrcd
     email = uniquenick + "@nds"  # The Wii also seems to use @nds.
 
     if "csnum" in authtoken_parsed:
@@ -164,13 +154,13 @@ def login_profile_via_parsed_authtoken(authtoken_parsed, db):
     if "cfc" in authtoken_parsed:
         console = 1
 
-    valid_user = db.check_user_exists(userid, gsbrcd)
+    valid_user = await db.check_user_exists(userid, gsbrcd)
     if valid_user is False:
-        profileid = db.create_user(userid, password, email, uniquenick,
-                                   gsbrcd, console, csnum, cfc, bssid,
-                                   devname, birth, gameid, macadr)
+        profileid = await db.create_user(userid, password, email, uniquenick,
+                                         gsbrcd, console, csnum, cfc, bssid,
+                                         devname, birth, gameid, macadr)
     else:
-        profileid = db.perform_login(userid, password, gsbrcd)
+        profileid = await db.perform_login(userid, password, gsbrcd)
 
     return userid, profileid, gsbrcd, uniquenick
 
@@ -178,7 +168,7 @@ def login_profile_via_parsed_authtoken(authtoken_parsed, db):
 def generate_response(challenge, ac_challenge, secretkey, authtoken):
     """Generate a challenge response."""
     md5 = hashlib.md5()
-    md5.update(ac_challenge)
+    md5.update(ac_challenge.encode('latin-1') if isinstance(ac_challenge, str) else ac_challenge)
 
     output = md5.hexdigest()
     output += ' ' * 0x30
@@ -188,7 +178,7 @@ def generate_response(challenge, ac_challenge, secretkey, authtoken):
     output += md5.hexdigest()
 
     md5_2 = hashlib.md5()
-    md5_2.update(output)
+    md5_2.update(output.encode('latin-1'))
 
     return md5_2.hexdigest()
 
@@ -202,7 +192,7 @@ def generate_proof(challenge, ac_challenge, secretkey, authtoken):
     Maybe combine the two functions later?
     """
     md5 = hashlib.md5()
-    md5.update(ac_challenge)
+    md5.update(ac_challenge.encode('latin-1') if isinstance(ac_challenge, str) else ac_challenge)
 
     output = md5.hexdigest()
     output += ' ' * 0x30
@@ -212,7 +202,7 @@ def generate_proof(challenge, ac_challenge, secretkey, authtoken):
     output += md5.hexdigest()
 
     md5_2 = hashlib.md5()
-    md5_2.update(output)
+    md5_2.update(output.encode('latin-1'))
 
     return md5_2.hexdigest()
 
@@ -225,7 +215,7 @@ def get_friendcode_from_profileid(profileid, gameid):
 
     # Combine the profileid and gameid into one buffer
     buffer = [(profileid >> (8 * i)) & 0xff for i in range(4)]
-    buffer += [ord(c) for c in gameid]
+    buffer += [ord(c) for c in gameid] if isinstance(gameid, str) else list(gameid)
 
     crc = utils.calculate_crc8(buffer)
 

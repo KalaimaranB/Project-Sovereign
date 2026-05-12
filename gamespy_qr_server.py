@@ -30,22 +30,18 @@ import socket
 import struct
 import threading
 import time
-import Queue
+import queue
 import traceback
 
-from multiprocessing.managers import BaseManager
-
 import gamespy.gs_utility as gs_utils
-import gamespy.gs_database as gs_database
+from gamespy.pg_database import PostgresGamespyDatabase
 import other.utils as utils
 import dwc_config
 from gamespy_server_browser_server import GameSpyServerBrowserServer
+import asyncio
+from gamespy_backend_server import GameSpyBackendServer
 
 logger = dwc_config.get_logger('GameSpyQRServer')
-
-
-class GameSpyServerDatabase(BaseManager):
-    pass
 
 
 class GameSpyQRServer(object):
@@ -67,15 +63,8 @@ class GameSpyQRServer(object):
     def __init__(self):
         self.sessions = {}
 
-        # Generate a dictionary "secret_key_list" containing the secret game
-        # keys associated with their game IDs. The dictionary key will be the
-        # game's ID, and the value will be the secret key.
         self.secret_key_list = gs_utils.generate_secret_keys("gslist.cfg")
-        # self.log(logging.DEBUG, address, session_id,
-        #          "Generated list of secret game keys...")
-
-        GameSpyServerDatabase.register("update_server_list")
-        GameSpyServerDatabase.register("delete_server")
+        self.backend = GameSpyBackendServer()
 
     def log(self, level, address, session_id, msg, *args, **kwargs):
         """TODO: Use logger format"""
@@ -91,16 +80,18 @@ class GameSpyQRServer(object):
                            address[0], address[1],
                            *args, **kwargs)
 
+    def _sync_db_call(self, coro):
+        """Uses the persistent, single-source event loop to bridge IO operations."""
+        try:
+            return self._db_loop.run_until_complete(coro)
+        except Exception as e:
+            logger.error("Async DB Bridge Failure: %s", e)
+            return None
+
     def start(self):
         try:
-            manager_address = dwc_config.get_ip_port('GameSpyManager')
-            manager_password = ""
-
-            self.server_manager = GameSpyServerDatabase(
-                address=manager_address,
-                authkey=manager_password
-            )
-            self.server_manager.connect()
+            # Connection established locally now, no manager needed
+            pass
 
             # Start QR server
             # Accessible to outside connections (use this if you don't know
@@ -123,8 +114,15 @@ class GameSpyQRServer(object):
             )
             server_browser_server_thread.start()
 
-            self.write_queue = Queue.Queue()
-            self.db = gs_database.GamespyDatabase()
+            self.write_queue = queue.Queue()
+            
+            # Establish a SINGLE singleton event loop persistent across this thread
+            self._db_loop = asyncio.new_event_loop()
+            self.db = PostgresGamespyDatabase()
+            
+            # Utilize dedicated loop for ALL subsequent driver routines
+            self._db_loop.run_until_complete(self.db.initialize_database())
+            
             threading.Thread(target=self.write_queue_worker).start()
 
             while True:
@@ -139,7 +137,7 @@ class GameSpyQRServer(object):
                                    "Failed to handle client: %s",
                                    traceback.format_exc())
 
-                self.keepalive_check()
+
         except:
             logger.log(logging.ERROR,
                        "Unknown exception: %s",
@@ -158,7 +156,7 @@ class GameSpyQRServer(object):
 
     def update_server_list(self, session_id, k):
         if "statechanged" in k and k['statechanged'] == "2":  # Close server
-            self.server_manager.delete_server(k['gamename'], session_id)
+            self.backend.delete_server(k['gamename'], session_id)
 
             if session_id in self.sessions:
                 del self.sessions[session_id]
@@ -174,10 +172,10 @@ class GameSpyQRServer(object):
 
             # Some memory could be saved by clearing out any unwanted fields
             # from k before sending.
-            self.server_manager.update_server_list(
+            self.backend.update_server_list(
                 k['gamename'], session_id, k,
                 self.sessions[session_id].console
-            )._getvalue()
+            )
 
             if session_id in self.sessions:
                 self.sessions[session_id].gamename = k['gamename']
@@ -345,7 +343,7 @@ class GameSpyQRServer(object):
                 # Failed the challenge, request another during the next
                 # heartbeat
                 self.sessions[session_id].sent_challenge = False
-                self.server_manager.delete_server(
+                self.backend.delete_server(
                     self.sessions[session_id].gamename,
                     session_id
                 )
@@ -376,17 +374,17 @@ class GameSpyQRServer(object):
             if self.sessions[session_id].ingamesn is not None:
                 if "gamename" in k and "dwc_pid" in k:
                     try:
-                        profile = self.db.get_profile_from_profileid(
+                        profile = self._sync_db_call(self.db.get_profile_from_profileid(
                             k['dwc_pid']
-                        )
-                        naslogin = self.db.get_nas_login_from_userid(
+                        ))
+                        naslogin = self._sync_db_call(self.db.get_nas_login_from_userid(
                             profile['userid']
-                        )
+                        ))
                         # Convert to string from unicode (which is just a
                         # base64 string anyway)
                         self.sessions[session_id].ingamesn = \
                             str(naslogin['ingamesn'])
-                    except Exception, e:
+                    except Exception as e:
                         # If the game doesn't have, don't worry about it.
                         pass
 
@@ -433,9 +431,9 @@ class GameSpyQRServer(object):
                     # Try a 3 times before giving up
                     for i in range(0, 3):
                         try:
-                            profile = self.db.get_profile_from_profileid(
+                            profile = self._sync_db_call(self.db.get_profile_from_profileid(
                                 self.sessions[session_id].playerid
-                            )
+                            ))
 
                             if "console" in profile:
                                 self.sessions[session_id].console = \
@@ -548,34 +546,6 @@ class GameSpyQRServer(object):
                      "%s",
                      utils.pretty_print_hex(recv_data))
 
-    def keepalive_check(self):
-        # self.log(logging.DEBUG, None, session_id,
-        #          "Keep alive check on %d sessions",
-        #          len(self.sessions))
-
-        pruned = []
-        now = int(time.time())
-
-        for session_id in self.sessions:
-            delta = now - self.sessions[session_id].keepalive
-            timeout = 61  # Remove clients that haven't responded in x seconds
-
-            if delta < 0 or delta >= timeout:
-                pruned.append(session_id)
-                self.server_manager.delete_server(
-                    self.sessions[session_id].gamename,
-                    self.sessions[session_id].session
-                )
-                self.log(logging.DEBUG, None, session_id,
-                         "Keep alive check removed %s:%s for game %s."
-                         " Client hasn't responded in %d seconds.",
-                         self.sessions[session_id].address[0],
-                         self.sessions[session_id].address[1],
-                         self.sessions[session_id].gamename,
-                         delta)
-
-        for session_id in pruned:
-            del self.sessions[session_id]
 
 
 if __name__ == "__main__":

@@ -22,6 +22,9 @@
 
 def parse_gamespy_message(message):
     """Parse a GameSpy message."""
+    if isinstance(message, (bytes, bytearray)):
+        message = message.decode('latin-1')
+        
     stack = []
     messages = {}
     msg = message

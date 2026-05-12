@@ -24,7 +24,8 @@ import logging.handlers
 import random
 import string
 import struct
-import urlparse
+from urllib import parse as urlparse
+from functools import reduce
 import ctypes
 import os
 
@@ -121,7 +122,7 @@ def get_num_from_bytes(data, idx, fmt, bigEndian=False):
 
     Endianness by default is little.
     """
-    return struct.unpack_from("<>"[bigEndian] + fmt, buffer(bytearray(data)), idx)[0]
+    return struct.unpack_from("<>"[bigEndian] + fmt, bytearray(data), idx)[0]
 
 # Instead of passing slices, pass the buffer and index so we can calculate
 # the length automatically.
@@ -191,9 +192,15 @@ def get_local_addr(data, idx):
 
 def get_string(data, idx):
     """Get string from bytes."""
-    data = data[idx:]
-    end = data.index('\x00')
-    return str(''.join(data[:end]))
+    data = bytearray(data)[idx:]
+    try:
+        end = data.index(b'\x00')
+    except ValueError:
+        try:
+            end = data.index(0)
+        except ValueError:
+            end = len(data)
+    return data[:end].decode('latin-1')
 
 
 def get_bytes_from_num(num, fmt, bigEndian=False):
@@ -291,9 +298,9 @@ def print_hex(data, cols=16, sep=' ', pretty=True):
     Can be pretty printed but takes more time.
     """
     if pretty:
-        print pretty_print_hex(data, cols, sep)
+        print(pretty_print_hex(data, cols, sep))
     else:
-        print sep.join("%02x" % b for b in bytearray(data))
+        print(sep.join("%02x" % b for b in bytearray(data)))
 
 
 def pretty_print_hex(orig_data, cols=16, sep=' '):
