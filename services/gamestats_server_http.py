@@ -126,8 +126,17 @@ class GameStatsHTTPServer(BaseHTTPServer.HTTPServer):
 
     def parse_key_file(self, filename="gamestats.cfg"):
         gamelist = {}
+        
+        # Resolve path in fallback repository
+        target = filename
+        if not os.path.isabs(target) and not target.startswith('config/'):
+            # services/gamestats_server_http.py -> project root is one level up
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            candidate = os.path.join(base_dir, 'config', target)
+            if os.path.exists(candidate):
+                target = candidate
 
-        with open(filename, encoding='latin-1') as config_file:
+        with open(target, encoding='latin-1') as config_file:
             for line in config_file.readlines():
                 line, sep, comment = line.partition("#")
 

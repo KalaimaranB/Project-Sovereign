@@ -434,3 +434,25 @@ class PostgresGamespyDatabase(IGamespyDatabase):
             rows = await conn.fetch("SELECT * FROM pending_messages WHERE targetid = $1", profileid)
             return [dict(r) for r in rows]
 
+    async def execute_raw(self, query, *args):
+        """Direct general execute gateway routing statements directly to the async pool."""
+        async with self.pool.acquire() as conn:
+            return await conn.execute(query, *args)
+
+    async def fetch_raw(self, query, *args):
+        """Standard generic retrieval query returning dictionary maps."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, *args)
+            return [dict(r) for r in rows]
+
+    async def fetchrow_raw(self, query, *args):
+        """Retrieve a single dict-mapped row result scalar."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(query, *args)
+            return dict(row) if row else None
+
+    async def fetchval_raw(self, query, *args):
+        """Fetch scalar raw values direct."""
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(query, *args)
+

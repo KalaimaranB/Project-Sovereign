@@ -7,6 +7,8 @@
 import asyncio
 import logging
 import sys
+import os
+from other import metrics
 
 import dwc_config
 from gamespy import gs_database
@@ -98,8 +100,9 @@ class AsyncSessionHandler:
                       self.ctx.unregister(effect.payload)
 
     async def run(self):
-        """Primary read-stream iteration loop managing lifecycle."""
         logger.info("New stream opened from %s", self.peer)
+        metrics.increment_connections('profile')
+
         
         # Trigger initial greeting handshake logic
         initial = self.logic.on_connection_made()
@@ -124,6 +127,7 @@ class AsyncSessionHandler:
         except Exception as e:
              logger.error("Terminal handler exception: %s", e)
         finally:
+             metrics.decrement_connections('profile')
              # Trigger teardown protocol and ensure disconnected properly
              logger.info("Releasing stream handles for %s", self.peer)
              exit_effects = await self.logic.on_connection_lost()
@@ -147,6 +151,10 @@ class GameSpyProfileServer:
         await handler.run()
 
     async def main(self):
+        # 0. Launch centralized telemetry scraper endpoint
+        metrics_port = int(os.environ.get('METRICS_PORT', 9100))
+        metrics.launch_metrics_endpoint(metrics_port)
+
         # 1. Establish the shared async connection pool once globally
         await self.db.initialize_database()
         

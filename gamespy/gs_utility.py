@@ -27,6 +27,8 @@ import time
 import other.utils as utils
 
 
+import os
+
 def generate_secret_keys(filename="gslist.cfg"):
     """Generate list of secret keys based on a config file.
 
@@ -34,7 +36,17 @@ def generate_secret_keys(filename="gslist.cfg"):
     TODO: Parse the config file in a cleaner way. (ex: using CSV module)
     """
     secret_key_list = {}
-    with open(filename, encoding='latin-1') as key_file:
+    
+    # Resolve target in config directory if candidate exists
+    target = filename
+    if not os.path.isabs(target) and not target.startswith('config/'):
+        # gamespy/gs_utility.py -> project root is one level up
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        candidate = os.path.join(base_dir, 'config', target)
+        if os.path.exists(candidate):
+            target = candidate
+
+    with open(target, encoding='latin-1') as key_file:
         for line in key_file.readlines():
             # name = line[:54].strip()
             # Probably won't do anything with the name for now.

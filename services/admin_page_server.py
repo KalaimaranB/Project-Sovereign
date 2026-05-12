@@ -24,7 +24,7 @@ from twisted.internet import reactor
 from twisted.internet.error import ReactorAlreadyRunning
 import base64
 import codecs
-import sqlite3
+from gamespy.pg_database_sync import PostgresGamespyDatabaseSync
 import collections
 import json
 import os.path
@@ -73,6 +73,7 @@ class AdminPage(resource.Resource):
 
     def __init__(self, adminpage):
         self.adminpage = adminpage
+        self.db = PostgresGamespyDatabaseSync()
 
     def get_header(self, title=None):
         if not title:
@@ -122,10 +123,8 @@ class AdminPage(resource.Resource):
             request.setHeader('WWW-Authenticate', 'Basic realm="ALTWFC"')
             request.write(error_message)
         return is_auth
-
     def update_banlist(self, request):
         address = request.getClientIP()
-        dbconn = sqlite3.connect('gpcm.db')
         gameid = request.args['gameid'][0].upper().strip()
         ipaddr = request.args['ipaddr'][0].strip()
         actiontype = request.args['action'][0]
@@ -142,19 +141,17 @@ class AdminPage(resource.Resource):
             gameid = gameid[:-1]
 
         if actiontype == 'ban':
-            dbconn.cursor().execute(
-                'INSERT INTO banned VALUES(?,?)',
-                (gameid, ipaddr)
+            self.db.execute_raw(
+                'INSERT INTO banned (gameid, ipaddr) VALUES($1,$2)',
+                gameid, ipaddr
             )
             responsedata = "Added gameid=%s, ipaddr=%s" % (gameid, ipaddr)
         else:
-            dbconn.cursor().execute(
-                'DELETE FROM banned WHERE gameid=? AND ipaddr=?',
-                (gameid, ipaddr)
+            self.db.execute_raw(
+                'DELETE FROM banned WHERE gameid=$1 AND ipaddr=$2',
+                gameid, ipaddr
             )
             responsedata = "Removed gameid=%s, ipaddr=%s" % (gameid, ipaddr)
-        dbconn.commit()
-        dbconn.close()
         logger.log(logging.INFO, "%s %s", address, responsedata)
         request.setHeader("Content-Type", "text/html; charset=utf-8")
 
@@ -168,7 +165,6 @@ class AdminPage(resource.Resource):
 
     def update_consolelist(self, request):
         address = request.getClientIP()
-        dbconn = sqlite3.connect('gpcm.db')
         macadr = request.args['macadr'][0].strip()
         actiontype = request.args['action'][0]
         if not macadr.isalnum():
@@ -176,33 +172,31 @@ class AdminPage(resource.Resource):
             logger.log(logging.INFO, "%s Bad data %s", address, macadr)
             return "Bad data"
         if actiontype == 'add':
-            dbconn.cursor().execute(
-                'INSERT INTO pending VALUES(?)',
-                (macadr,)
+            self.db.execute_raw(
+                'INSERT INTO pending (macadr) VALUES($1)',
+                macadr
             )
-            dbconn.cursor().execute(
-                'INSERT INTO registered VALUES(?)',
-                (macadr,)
+            self.db.execute_raw(
+                'INSERT INTO registered (macadr) VALUES($1)',
+                macadr
             )
             responsedata = "Added macadr=%s" % (macadr)
         elif actiontype == 'activate':
-            dbconn.cursor().execute(
-                'INSERT INTO registered VALUES(?)',
-                (macadr,)
+            self.db.execute_raw(
+                'INSERT INTO registered (macadr) VALUES($1)',
+                macadr
             )
             responsedata = "Activated console belonging to %s" % (macadr)
         else:
-            dbconn.cursor().execute(
-                'DELETE FROM pending WHERE macadr=?',
-                (macadr,)
+            self.db.execute_raw(
+                'DELETE FROM pending WHERE macadr=$1',
+                macadr
             )
-            dbconn.cursor().execute(
-                'DELETE FROM registered WHERE macadr=?',
-                (macadr,)
+            self.db.execute_raw(
+                'DELETE FROM registered WHERE macadr=$1',
+                macadr
             )
             responsedata = "Removed macadr=%s" % (macadr)
-        dbconn.commit()
-        dbconn.close()
         logger.log(logging.INFO, "%s %s", address, responsedata)
         request.setHeader("Content-Type", "text/html; charset=utf-8")
         request.setHeader("Location", "/consoles")
@@ -217,7 +211,6 @@ class AdminPage(resource.Resource):
 
     def render_banlist(self, request):
         address = request.getClientIP()
-        dbconn = sqlite3.connect('gpcm.db')
         logger.log(logging.INFO, "%s Viewed banlist", address)
         responsedata = """
         <a href="http://%%20:%%20@%s">[CLICK HERE TO LOG OUT]</a>
@@ -227,9 +220,10 @@ class AdminPage(resource.Resource):
             <td>ipAddr</td>
         </tr>""" % (request.getHeader('host'))
 
-        for row in dbconn.cursor().execute("SELECT * FROM banned"):
-            gameid = str(row[0])
-            ipaddr = str(row[1])
+        rows = self.db.fetch_raw("SELECT * FROM banned")
+        for row in rows:
+            gameid = str(row['gameid'])
+            ipaddr = str(row['ipaddr'])
             # TODO: Use .format()/positional arguments
             responsedata += """
             <tr>
@@ -246,7 +240,6 @@ class AdminPage(resource.Resource):
             </tr>""" % (gameid, ipaddr, gameid, ipaddr)
 
         responsedata += "</table>"
-        dbconn.close()
         request.setHeader("Content-Type", "text/html; charset=utf-8")
         return responsedata
 
@@ -263,17 +256,17 @@ class AdminPage(resource.Resource):
         INNER JOIN users
         ON users.userid = nas_logins.userid
         INNER JOIN (
-            SELECT max(profileid) newestpid, userid, gameid, devname
+            SELECT max(profileid) newestpid, userid, gameid
             FROM users
             GROUP BY userid, gameid
         ) ij
         ON ij.userid = users.userid
         AND users.profileid = ij.newestpid
         ORDER BY users.gameid"""
-        dbconn = sqlite3.connect('gpcm.db')
         banned_list = []
-        for row in dbconn.cursor().execute("SELECT * FROM BANNED"):
-            banned_list.append(str(row[0])+":"+str(row[1]))
+        rows = self.db.fetch_raw("SELECT * FROM BANNED")
+        for row in rows:
+            banned_list.append(str(row['gameid'])+":"+str(row['ipaddr']))
         responsedata = """
         <a href="http://%%20:%%20@%s">[CLICK HERE TO LOG OUT]</a>
         <br><br>
@@ -288,13 +281,14 @@ class AdminPage(resource.Resource):
             <td>ipAddr</td>
         </tr>""" % request.getHeader('host')
 
-        for row in dbconn.cursor().execute(sqlstatement):
-            dwc_pid = str(row[0])
-            enabled = str(row[1])
-            nasdata = collections.defaultdict(lambda: '', json.loads(row[2]))
-            gameid = str(row[3])
-            is_console = int(str(row[4]))
-            userid = str(row[5])
+        records = self.db.fetch_raw(sqlstatement)
+        for row in records:
+            dwc_pid = str(row['profileid'])
+            enabled = str(row['enabled'])
+            nasdata = collections.defaultdict(lambda: '', json.loads(row['data']))
+            gameid = str(row['gameid'])
+            is_console = int(str(row['console']))
+            userid = str(row['userid'])
             gsbrcd = str(nasdata['gsbrcd'])
             ipaddr = str(nasdata['ipaddr'])
             ingamesn = ''
@@ -368,25 +362,22 @@ class AdminPage(resource.Resource):
                        address, userid, gameid)
             return "Bad data"
 
-        dbconn = sqlite3.connect('gpcm.db')
         if enable:
-            dbconn.cursor().execute(
+            self.db.execute_raw(
                 'UPDATE users SET enabled=1 '
-                'WHERE gameid=? AND userid=?',
-                (gameid, userid)
+                'WHERE gameid=$1 AND userid=$2',
+                gameid, userid
             )
             responsedata = "Enabled %s with gameid=%s, userid=%s" % \
                            (ingamesn, gameid, userid)
         else:
-            dbconn.cursor().execute(
+            self.db.execute_raw(
                 'UPDATE users SET enabled=0 '
-                'WHERE gameid=? AND userid=?',
-                (gameid, userid)
+                'WHERE gameid=$1 AND userid=$2',
+                gameid, userid
             )
             responsedata = "Disabled %s with gameid=%s, userid=%s" % \
                            (ingamesn, gameid, userid)
-        dbconn.commit()
-        dbconn.close()
         logger.log(logging.INFO, "%s %s", address, responsedata)
         request.setHeader("Content-Type", "text/html; charset=utf-8")
         request.setHeader("Location", "/banhammer")
@@ -395,10 +386,10 @@ class AdminPage(resource.Resource):
 
     def render_consolelist(self, request):
         address = request.getClientIP()
-        dbconn = sqlite3.connect('gpcm.db')
         active_list = []
-        for row in dbconn.cursor().execute("SELECT * FROM REGISTERED"):
-            active_list.append(str(row[0]))
+        reg_rows = self.db.fetch_raw("SELECT * FROM REGISTERED")
+        for row in reg_rows:
+            active_list.append(str(row['macadr']))
         logger.log(logging.INFO, "%s Viewed console list", address)
         responsedata = (
             '<a href="http://%20:%20@' + request.getHeader('host') +
@@ -411,8 +402,9 @@ class AdminPage(resource.Resource):
             "<table border='1'>"
             "<tr><td>macadr</td></tr>\r\n"
         )
-        for row in dbconn.cursor().execute("SELECT * FROM pending"):
-            macadr = str(row[0])
+        pend_rows = self.db.fetch_raw("SELECT * FROM pending")
+        for row in pend_rows:
+            macadr = str(row['macadr'])
             if macadr in active_list:
                 responsedata += """
                 <tr>

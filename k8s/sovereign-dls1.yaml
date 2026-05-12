@@ -1,41 +1,40 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sovereign-nas
+  name: sovereign-dls1
   labels:
-    app: sovereign-nas
+    app: sovereign-dls1
 spec:
-  replicas: 2 # Enable horizontal scaling redundancy!
+  replicas: 2 # Horizontal scaling redundancy
   selector:
     matchLabels:
-      app: sovereign-nas
+      app: sovereign-dls1
   template:
     metadata:
       labels:
-        app: sovereign-nas
+        app: sovereign-dls1
     spec:
       containers:
-      - name: nas
+      - name: dls1
         image: project_sovereign_master:latest
-        imagePullPolicy: Never # Utilizes local container engine cache built earlier
-        command: ["python", "nas_server.py"]
+        imagePullPolicy: Never
+        command: ["python", "dls1_server.py"]
         envFrom:
         - configMapRef:
             name: sovereign-config
         ports:
-        - containerPort: 9000
+        - containerPort: 9003
           protocol: TCP
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: sovereign-nas
+  name: sovereign-dls1
 spec:
   selector:
-    app: sovereign-nas
+    app: sovereign-dls1
   type: ClusterIP
   ports:
     - protocol: TCP
-      port: 9000
-      targetPort: 9000
-
+      port: 9003
+      targetPort: 9003

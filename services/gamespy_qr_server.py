@@ -44,6 +44,17 @@ from gamespy_backend_server import GameSpyBackendServer
 logger = dwc_config.get_logger('GameSpyQRServer')
 
 
+class SovereignAddress(tuple):
+    """
+    Adapted Tuple Decorator tracking the local loopback proxy source port.
+    Satisfies standard tuple interface for legacy game engine logic compatibility.
+    """
+    def __new__(cls, original_addr, proxy_addr=None):
+        obj = super(SovereignAddress, cls).__new__(cls, original_addr)
+        obj.proxy_addr = proxy_addr
+        return obj
+
+
 class GameSpyQRServer(object):
     class Session(object):
         def __init__(self, address):
@@ -131,6 +142,24 @@ class GameSpyQRServer(object):
                 if ready[0]:
                     try:
                         recv_data, address = self.socket.recvfrom(2048)
+                        
+                        # Support Sovereign Transparent Header Encapsulation (STHE) from trusted WAF
+                        import os
+                        is_loopback = address[0] in ('127.0.0.1', '::1')
+                        is_trusted = is_loopback or os.environ.get('TRUST_ALL_PROXIES') == '1'
+                        
+                        if is_trusted and recv_data.startswith(b'SOV\x01') and len(recv_data) >= 10:
+                            import struct
+                            try:
+                                ip = '.'.join(str(b) for b in recv_data[4:8])
+                                port = struct.unpack("!H", recv_data[8:10])[0]
+                                
+                                # Wrap original address preserving standard tuple interface
+                                address = SovereignAddress((ip, port), proxy_addr=address)
+                                recv_data = recv_data[10:]
+                            except Exception:
+                                pass
+
                         self.handle_packet(self.socket, recv_data, address)
                     except:
                         logger.log(logging.ERROR,
@@ -145,6 +174,23 @@ class GameSpyQRServer(object):
 
     def write_queue_send(self, data, address):
         time.sleep(0.05)
+        
+        # Check if client session operates through local WAF proxy vector
+        if hasattr(address, 'proxy_addr') and address.proxy_addr:
+            import struct
+            try:
+                # Re-wrap the egress vector with the target client IP/port
+                dest_ip = bytearray(int(x) for x in address[0].split('.'))
+                dest_port = struct.pack("!H", address[1])
+                wrapped = b'SOV\x01' + bytes(dest_ip) + dest_port + data
+                
+                # Dispatch back through proxy loopback port
+                self.socket.sendto(wrapped, address.proxy_addr)
+                return
+            except Exception:
+                logger.error("Failed to wrap SOV header for target %s", address)
+
+        # Default fallback to standard direct connected logic
         self.socket.sendto(data, address)
 
     def write_queue_worker(self):

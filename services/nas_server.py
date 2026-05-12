@@ -28,7 +28,10 @@ import traceback
 import threading
 import asyncio
 
+import os
+from other import metrics
 from gamespy.pg_database_sync import PostgresGamespyDatabaseSync
+
 from other import utils
 import dwc_config
 
@@ -235,7 +238,8 @@ class NasHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_header("X-Organization", "Nintendo")
             self.send_header("Server", "BigIP")
             self.end_headers()
-            self.wfile.write("ok")
+            self.wfile.write(b"ok")
+            metrics.record_http_request('nas', 'GET fallback', 200)
         except:
             logger.log(logging.ERROR, "Exception occurred on GET request!")
             logger.log(logging.ERROR, "%s", traceback.format_exc())
@@ -254,9 +258,15 @@ class NasHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             ret = command(self, client_address, post)
 
             if ret is not None:
+                if isinstance(ret, str):
+                    ret = ret.encode('latin-1')
                 self.send_header("Content-Length", str(len(ret)))
                 self.end_headers()
                 self.wfile.write(ret)
+            
+            # Track HTTP endpoint hit
+            status = 200 if ret is not None else 404
+            metrics.record_http_request('nas', 'POST ' + self.path, status)
         except:
             logger.log(logging.ERROR, "Exception occurred on POST request!")
             logger.log(logging.ERROR, "%s", traceback.format_exc())
@@ -272,6 +282,10 @@ class NasHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
 
 class NasServer(object):
     def start(self):
+        # 0. Launch centralized telemetry scraper endpoint
+        metrics_port = int(os.environ.get('METRICS_PORT', 9102))
+        metrics.launch_metrics_endpoint(metrics_port)
+
         address = dwc_config.get_ip_port('NasServer')
         httpd = NasHTTPServer(address, NasHTTPServerHandler)
         logger.log(logging.INFO, "Now listening for connections on %s:%d...",

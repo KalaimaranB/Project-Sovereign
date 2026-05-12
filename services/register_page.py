@@ -25,7 +25,7 @@ from twisted.internet.error import ReactorAlreadyRunning
 import re
 import base64
 import codecs
-import sqlite3
+from gamespy.pg_database_sync import PostgresGamespyDatabaseSync
 import collections
 import json
 import time
@@ -45,6 +45,7 @@ class RegPage(resource.Resource):
 
     def __init__(self, regpage):
         self.regpage = regpage
+        self.db = PostgresGamespyDatabaseSync()
 
     def get_header(self, title=None):
         if not title:
@@ -68,7 +69,6 @@ class RegPage(resource.Resource):
 
     def update_maclist(self, request):
         address = request.getClientIP()
-        dbconn = sqlite3.connect('gpcm.db')
         macadr = request.args['macadr'][0].strip()
         actiontype = request.args['action'][0]
         macadr = macadr.lower()
@@ -79,16 +79,14 @@ class RegPage(resource.Resource):
                    "Please click the back button and try again!"
         macadr = macadr.replace(":", "").replace("-", "")
         if actiontype == 'add':
-            dbconn.cursor().execute(
-                'INSERT INTO pending VALUES(?)',
-                (macadr,)
+            self.db.execute_raw(
+                'INSERT INTO pending (macadr) VALUES($1)',
+                macadr
             )
             responsedata = "Added %s to pending list." % (macadr)
             responsedata += "Please close this window now."
             " It's also not a bad idea to check back on the status of your"
             " activation by attempting to connect your console to the server."
-        dbconn.commit()
-        dbconn.close()
         request.setHeader("Content-Type", "text/html; charset=utf-8")
         request.setResponseCode(303)
         return responsedata
@@ -101,7 +99,6 @@ class RegPage(resource.Resource):
 
     def render_maclist(self, request):
         address = request.getClientIP()
-        dbconn = sqlite3.connect('gpcm.db')
         responsedata = """
         <form action='updatemaclist' method='POST'>
         macadr (must be in the format of %s or %s):
@@ -110,7 +107,6 @@ class RegPage(resource.Resource):
             <input type='submit' value='Register console'>
         </form>
         <table border='1'>""" % ('aa:bb:cc:dd:ee:ff', 'aa-bb-cc-dd-ee-ff')
-        dbconn.close()
         request.setHeader("Content-Type", "text/html; charset=utf-8")
         return responsedata
 

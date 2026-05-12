@@ -6,6 +6,8 @@ from collections import namedtuple
 import other.utils as utils
 import gamespy.gs_query as gs_query
 import gamespy.gs_utility as gs_utility
+from other import metrics
+
 
 logger = logging.getLogger('GameSpyProfileServer')
 
@@ -130,7 +132,9 @@ class ProfileProtocol:
             
             for cmd in commands:
                 self._log(logging.DEBUG, "Processing COMMAND: %s", cmd)
-                handler = dispatcher.get(cmd.get('__cmd__'))
+                cmd_name = cmd.get('__cmd__') or 'unknown'
+                metrics.record_packet('profile', cmd_name)
+                handler = dispatcher.get(cmd_name)
                 if handler:
                     res = await handler(cmd)
                     if res:

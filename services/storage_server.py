@@ -25,7 +25,7 @@ import logging
 import http.server as BaseHTTPServer
 import cgi
 import urllib.parse as urlparse
-import sqlite3
+from gamespy.pg_database_sync import PostgresGamespyDatabaseSync
 import xml.dom.minidom as minidom
 
 import other.utils as utils
@@ -61,19 +61,16 @@ class StorageHTTPServer(BaseHTTPServer.HTTPServer):
 
         self.gamespydb = gs_database.GamespyDatabase()
 
-        self.db = sqlite3.connect('storage.db')
+        self.db = PostgresGamespyDatabaseSync()
         self.tables = {}
         self.valid_sql_terms = ['LIKE', '=', 'AND', 'OR']
 
         logger.log(logging.INFO, "Checking for and creating database tables...")
 
-        cursor = self.db.cursor()
-        if not self.table_exists('typedata'):
-            cursor.execute('CREATE TABLE typedata (tbl TEXT, col TEXT, type TEXT)')
-        if not self.table_exists('filepaths'):
-            cursor.execute('CREATE TABLE filepaths (fileid INTEGER PRIMARY KEY AUTOINCREMENT, gameid INT, playerid INT, path TEXT)')
+        self.db.execute_raw('CREATE TABLE IF NOT EXISTS typedata (tbl TEXT, col TEXT, type TEXT)')
+        self.db.execute_raw('CREATE TABLE IF NOT EXISTS filepaths (fileid SERIAL PRIMARY KEY, gameid INT, playerid INT, path TEXT)')
 
-        PK = 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        PK = 'SERIAL PRIMARY KEY'
 
         self.create_or_alter_table_if_not_exists(
             'g1443_bbdx_player',
@@ -123,17 +120,31 @@ class StorageHTTPServer(BaseHTTPServer.HTTPServer):
         self.create_or_alter_table_if_not_exists(
             'g2050_box',
             ['recordid', 'ownerid', 'm_enable', 'm_type', 'm_index', 'm_file_id', 'm_header',   'm_file_id___size', 'm_file_id___create_time', 'm_file_id___downloads'],
-            [PK,         'INT',     'INT',      'INT',    'INT',     'INT',       'TEXT',       'INT',              'DATETIME',                'INT'                  ],
+            [PK,         'INT',     'INT',      'INT',    'INT',     'INT',       'TEXT',       'INT DEFAULT 0',    'TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP', 'INT DEFAULT 0' ],
             ['int',      'int',     'boolean',  'int',    'int',     'int',       'binaryData', 'int',              'dateAndTime',             'int'                  ])
-        cursor.execute('CREATE TRIGGER IF NOT EXISTS g2050ti_box AFTER INSERT ON g2050_box BEGIN UPDATE g2050_box SET m_file_id___create_time = strftime(\'%Y-%m-%dT%H:%M:%f\', \'now\'), m_file_id___size = 0, m_file_id___downloads = 0 WHERE recordid = NEW.recordid; END')
-        cursor.execute('CREATE TRIGGER IF NOT EXISTS g2050tu_box AFTER UPDATE ON g2050_box BEGIN UPDATE g2050_box SET m_file_id___create_time = strftime(\'%Y-%m-%dT%H:%M:%f\', \'now\') WHERE recordid = NEW.recordid; END')
         self.create_or_alter_table_if_not_exists(
             'g2050_box_us_eu',
             ['recordid', 'ownerid', 'm_enable', 'm_type', 'm_index', 'm_file_id', 'm_header',   'm_file_id___size', 'm_file_id___create_time', 'm_file_id___downloads'],
-            [PK,         'INT',     'INT',      'INT',    'INT',     'INT',       'TEXT',       'INT',              'DATETIME',                'INT'                  ],
+            [PK,         'INT',     'INT',      'INT',    'INT',     'INT',       'TEXT',       'INT DEFAULT 0',    'TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP', 'INT DEFAULT 0' ],
             ['int',      'int',     'boolean',  'int',    'int',     'int',       'binaryData', 'int',              'dateAndTime',             'int'                  ])
-        cursor.execute('CREATE TRIGGER IF NOT EXISTS g2050ti_box_us_eu AFTER INSERT ON g2050_box_us_eu BEGIN UPDATE g2050_box_us_eu SET m_file_id___create_time = strftime(\'%Y-%m-%dT%H:%M:%f\', \'now\'), m_file_id___size = 0, m_file_id___downloads = 0 WHERE recordid = NEW.recordid; END')
-        cursor.execute('CREATE TRIGGER IF NOT EXISTS g2050tu_box_us_eu AFTER UPDATE ON g2050_box_us_eu BEGIN UPDATE g2050_box_us_eu SET m_file_id___create_time = strftime(\'%Y-%m-%dT%H:%M:%f\', \'now\') WHERE recordid = NEW.recordid; END')
+
+        # Setup trigger procedures in PG for WarioWare datetime updates
+        self.db.execute_raw("""
+        CREATE OR REPLACE FUNCTION update_create_time_column()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.m_file_id___create_time = NOW();
+            RETURN NEW;
+        END;
+        $$ language 'plpgsql';
+        """)
+
+        # Attach Postgres update triggers
+        self.db.execute_raw("DROP TRIGGER IF EXISTS g2050tu_box ON g2050_box;")
+        self.db.execute_raw("CREATE TRIGGER g2050tu_box BEFORE UPDATE ON g2050_box FOR EACH ROW EXECUTE PROCEDURE update_create_time_column();")
+        
+        self.db.execute_raw("DROP TRIGGER IF EXISTS g2050tu_box_us_eu ON g2050_box_us_eu;")
+        self.db.execute_raw("CREATE TRIGGER g2050tu_box_us_eu BEFORE UPDATE ON g2050_box_us_eu FOR EACH ROW EXECUTE PROCEDURE update_create_time_column();")
 
         self.create_or_alter_table_if_not_exists(
             'g2649_bbdx_player',
@@ -201,38 +212,31 @@ class StorageHTTPServer(BaseHTTPServer.HTTPServer):
             ['int',      'int',     'asciiString', 'asciiString', 'int',  'int', 'int',       'int',       'int',      'int',      'int',        'int',        'int',        'int',        'int',         'int']
         )
 
-        # load column info into memory, unfortunately there's no simple way
-        # to check for column-existence so get that data in advance
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tabledata = cursor.fetchall()
+        # load column info into memory via information_schema
+        tabledata = self.db.fetch_raw("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
         for t in tabledata:
-            cursor.execute("PRAGMA table_info(%s)" % t[0]) # yeah I know but parameters don't work in pragmas, and inserting table names like that should be safe
-            columns = cursor.fetchall()
-            self.tables[t[0]] = [c[1] for c in columns]
-
-        self.db.commit()
+            tname = t['table_name']
+            cols = self.db.fetch_raw("SELECT column_name FROM information_schema.columns WHERE table_name = $1", tname)
+            self.tables[tname] = [c['column_name'] for c in cols]
 
     def table_exists(self, name):
-        cursor = self.db.cursor()
-        cursor.execute("SELECT Count(1) FROM sqlite_master WHERE type='table' AND name=?", (name,))
-        exists = cursor.fetchone()[0]
-        return True if exists else False
+        count = self.db.fetchval_raw(
+            "SELECT COUNT(1) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1",
+            name.lower()
+        )
+        return count > 0
 
     def column_exists(self, table, column):
-        cursor = self.db.cursor()
-        cursor.execute("PRAGMA table_info(%s)" % table)
-        data = cursor.fetchall()
-        for row in data:
-            if column == row[1]:
-                return True
-        return False
+        count = self.db.fetchval_raw(
+            "SELECT COUNT(1) FROM information_schema.columns WHERE table_name = $1 AND column_name = $2",
+            table.lower(), column.lower()
+        )
+        return count > 0
 
     def create_or_alter_table_if_not_exists(self, table, columns, sqlTypes, sakeTypes):
-        # this is certainly not the most efficient way to create a table, but it should work and makes that mess in the init function more readable
         if not self.table_exists(table):
-            cursor = self.db.cursor()
-            cursor.execute('CREATE TABLE ' + table + ' (' + columns[0] + ' ' + sqlTypes[0] + ')')
-            cursor.execute('INSERT INTO typedata (tbl, col, type) VALUES (?, ?, ?)', (table, columns[0], sakeTypes[0] + 'Value'))
+            self.db.execute_raw('CREATE TABLE ' + table + ' (' + columns[0] + ' ' + sqlTypes[0] + ')')
+            self.db.execute_raw('INSERT INTO typedata (tbl, col, type) VALUES ($1, $2, $3)', table, columns[0], sakeTypes[0] + 'Value')
 
         for i, col in enumerate(columns):
             self.create_column_if_not_exists(table, columns[i], sqlTypes[i], sakeTypes[i] + 'Value')
@@ -240,17 +244,15 @@ class StorageHTTPServer(BaseHTTPServer.HTTPServer):
 
     def create_column_if_not_exists(self, table, column, sqlType, sakeType):
         if not self.column_exists(table, column):
-            cursor = self.db.cursor()
-            cursor.execute('ALTER TABLE ' + table + ' ADD COLUMN ' + column + ' ' + sqlType)
-            cursor.execute('INSERT INTO typedata (tbl, col, type) VALUES (?, ?, ?)', (table, column, sakeType))
+            self.db.execute_raw('ALTER TABLE ' + table + ' ADD COLUMN ' + column + ' ' + sqlType)
+            self.db.execute_raw('INSERT INTO typedata (tbl, col, type) VALUES ($1, $2, $3)', table, column, sakeType)
         return
 
     def get_typedata(self, table, column):
         try:
-            cursor = self.db.cursor()
-            cursor.execute("SELECT type FROM typedata WHERE tbl=? AND col=?", (table,column))
-            return cursor.fetchone()[0]
-        except TypeError:
+            val = self.db.fetchval_raw("SELECT type FROM typedata WHERE tbl=$1 AND col=$2", table, column)
+            return val if val else 'UNKNOWN'
+        except:
             return 'UNKNOWN'
 
 
@@ -439,16 +441,15 @@ class StorageHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     statement += ' LIMIT ' + ','.join(limits)
 
                 logger.log(logging.DEBUG, statement)
-                cursor = self.server.db.cursor()
-                cursor.execute(statement)
-                rows = cursor.fetchall()
+                rows = self.server.db.fetch_raw(statement)
 
                 if rows:
                     ret += '<values>'
                     for r in rows:
                         ret += '<ArrayOfRecordValue>'
-                        for i, c in enumerate(r):
-                            type = self.server.get_typedata(table, columns[i])
+                        for i, col_name in enumerate(columns):
+                            c = r.get(col_name)
+                            type = self.server.get_typedata(table, col_name)
 
                             ret += '<RecordValue>'
                             ret += '<' + type + '>'
@@ -476,9 +477,7 @@ class StorageHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
                 logger.log(logging.DEBUG, statement)
 
-                cursor = self.server.db.cursor()
-                cursor.execute(statement)
-                count = cursor.fetchone()[0]
+                count = self.server.db.fetchval_raw(statement)
 
                 ret += '<count>' + str(count) + '</count>'
 
@@ -513,8 +512,12 @@ class StorageHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 if shortaction == 'UpdateRecord':
                     statement = 'UPDATE ' + table + ' SET '
 
-                    statement += ', '.join(c+' = ?' for c in columns)
-                    statement += ' WHERE recordid = ? AND ownerid = ?'
+                    set_clauses = []
+                    for idx, c in enumerate(columns, 1):
+                        set_clauses.append(f"{c} = ${idx}")
+                    statement += ', '.join(set_clauses)
+                    
+                    statement += f' WHERE recordid = ${len(columns) + 1} AND ownerid = ${len(columns) + 2}'
                     rowdata.append( recordid )
                     rowdata.append( profileid )
                 elif shortaction == 'CreateRecord':
@@ -522,19 +525,20 @@ class StorageHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
                     statement += ', '.join(columns)
                     statement += ', ownerid) VALUES ('
-                    statement += '?, '*len(columns)
-                    statement += '?)'
+                    
+                    placeholders = [f"${idx}" for idx in range(1, len(columns) + 2)]
+                    statement += ', '.join(placeholders)
+                    statement += ') RETURNING recordid'
                     rowdata.append( profileid )
                 else:
                     logger.log(logging.ERROR, 'Illegal Action %s in database insert/update path!', shortaction)
                     return
 
-                cursor = self.server.db.cursor()
-                cursor.execute(statement, tuple(rowdata))
-                recordid = cursor.lastrowid
-
                 if shortaction == 'CreateRecord':
+                    recordid = self.server.db.fetchval_raw(statement, *rowdata)
                     ret += '<recordid>' + str(recordid) + '</recordid>'
+                else:
+                    self.server.db.execute_raw(statement, *rowdata)
 
                 # Alright, so this kinda sucks, but we have no good way of automatically inserting
                 # or updating the file's .size attribute, so we have to manually check if any column
@@ -546,16 +550,13 @@ class StorageHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                         if rowdata[i] == 0: # is a delete command, just set filesize to 0
                             filesize = 0
                         else:
-                            cursor.execute('SELECT path FROM filepaths WHERE fileid = ?', (int(rowdata[i]),))
+                            filepath = self.server.db.fetchval_raw('SELECT path FROM filepaths WHERE fileid = $1', int(rowdata[i]))
 
                             try:
-                                filename = cursor.fetchone()[0]
-                                filesize = os.path.getsize(filename)
+                                filesize = os.path.getsize(filepath) if filepath else 0
                             except:
                                 filesize = 0
-                        cursor.execute('UPDATE ' + table + ' SET ' + attrcol + ' = ? WHERE recordid = ?', (filesize, recordid))
-
-                self.server.db.commit()
+                        self.server.db.execute_raw('UPDATE ' + table + ' SET ' + attrcol + ' = $1 WHERE recordid = $2', filesize, recordid)
 
             ret += '</' + shortaction + 'Response>'
             ret += '</soap:Body></soap:Envelope>'
@@ -601,13 +602,11 @@ class StorageHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 if not os.path.exists(userdir):
                     os.makedirs(userdir)
 
-                # get next fileid from database
-                cursor = self.server.db.cursor()
-                cursor.execute('INSERT INTO filepaths (gameid, playerid) VALUES (?, ?)', (gameid, playerid))
-                fileid = cursor.lastrowid
+                # get next fileid from database using RETURNING
+                fileid = self.server.db.fetchval_raw('INSERT INTO filepaths (gameid, playerid) VALUES ($1, $2) RETURNING fileid', gameid, playerid)
 
                 path = userdir + '/' + str(fileid)
-                cursor.execute('UPDATE filepaths SET path = ? WHERE fileid = ?', (path, fileid))
+                self.server.db.execute_raw('UPDATE filepaths SET path = $1 WHERE fileid = $2', path, fileid)
 
                 with open(path, 'wb') as fi:
                     fi.write(data)
@@ -650,13 +649,10 @@ class StorageHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
                 logger.log(logging.DEBUG, "SakeFileServer Download Request in game %s, user %s, file %s", gameid, playerid, fileid)
 
-                cursor = self.server.db.cursor()
-                cursor.execute('SELECT path FROM filepaths WHERE fileid = ?', (fileid,))
+                filename = self.server.db.fetchval_raw('SELECT path FROM filepaths WHERE fileid = $1', fileid)
 
                 try:
-                    filename = cursor.fetchone()[0]
-
-                    if os.path.exists(filename):
+                    if filename and os.path.exists(filename):
                         with open(filename, 'rb') as fi:
                             ret = fi.read()
                     else:

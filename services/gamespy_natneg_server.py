@@ -7,7 +7,10 @@
 import asyncio
 import logging
 import sys
+import os
+from other import metrics
 from gamespy_backend_server import GameSpyBackendServer
+
 
 import dwc_config
 import other.utils as utils
@@ -72,19 +75,58 @@ class NatNegAsyncProtocol(asyncio.DatagramProtocol):
         logger.info("Datagram endpoint ready.")
         
     def datagram_received(self, data, addr):
-        # Immediate evaluation utilizing robust parsed routing
-        effects = self.logic.handle_packet(data, addr)
+        # Detect Sovereign Transparent Header Encapsulation (STHE) from trusted WAF boundary
+        import os
+        is_loopback = addr[0] in ('127.0.0.1', '::1')
+        is_trusted = is_loopback or os.environ.get('TRUST_ALL_PROXIES') == '1'
         
-        # Execute yielded transport events instantly asynchronously
+        using_proxy = False
+        effective_client_addr = addr
+        
+        if is_trusted and data.startswith(b'SOV\x01') and len(data) >= 10:
+            import struct
+            try:
+                # Header: SOV\x01 (4) + IP (4) + Port (2)
+                ip_bytes = data[4:8]
+                port_bytes = data[8:10]
+                ip = '.'.join(str(b) for b in ip_bytes)
+                port = struct.unpack("!H", port_bytes)[0]
+                
+                effective_client_addr = (ip, port)
+                data = data[10:]
+                using_proxy = True
+            except Exception:
+                logger.error("Failed parsing SOV header wrapper from %s", addr)
+
+        # Immediate evaluation utilizing robust parsed routing
+        effects = self.logic.handle_packet(data, effective_client_addr)
+        
+        # Execute yielded transport events instantly
         for effect in effects:
-            # Future enhancement can introduce async sleep wrappers for delays,
-            # currently direct send suffices for legacy replacement.
-            self.transport.sendto(effect.data, effect.addr)
+            if using_proxy:
+                import struct
+                try:
+                    # Re-wrap the egress vector targeting the specific client
+                    dest_ip = bytearray(int(x) for x in effect.addr[0].split('.'))
+                    dest_port = struct.pack("!H", effect.addr[1])
+                    wrapped = b'SOV\x01' + bytes(dest_ip) + dest_port + effect.data
+                    
+                    # Forward back through the C proxy listener loopback
+                    self.transport.sendto(wrapped, addr)
+                except Exception:
+                    logger.error("Failed to wrap SOV response header for client %s", effect.addr)
+            else:
+                # Direct legacy direct-connected logic
+                self.transport.sendto(effect.data, effect.addr)
             
     def error_received(self, exc):
         logger.error("NatNeg socket error encountered: %s", exc)
 
 async def main():
+    # Launch centralized telemetry scraper endpoint
+    metrics_port = int(os.environ.get('METRICS_PORT', 9101))
+    metrics.launch_metrics_endpoint(metrics_port)
+
     ip, port = dwc_config.get_ip_port('GameSpyNatNegServer')
     logger.info("Initializing Modern Async NatNeg Server on %s:%d", ip, port)
     

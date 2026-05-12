@@ -4,6 +4,8 @@ import traceback
 from collections import namedtuple
 
 import other.utils as utils
+from other import metrics
+
 import gamespy.gs_utility as gs_utils
 
 logger = logging.getLogger('GameSpyNatNegServer')
@@ -63,6 +65,17 @@ class NatNegProtocol:
              return effects
              
         command_opcode = raw_data[7]
+        
+        # Map opcode to readable label for Dashboard display
+        opcode_map = {
+            0x00: "INIT", 0x01: "INITACK", 0x02: "CERT", 0x03: "CERTACK",
+            0x04: "CONNECT", 0x05: "CONNECTACK", 0x0A: "ADDR_CHECK",
+            0x0B: "ADDR_REPLY", 0x0C: "NATIFY", 0x0D: "REPORT",
+            0x0E: "REPORT_ACK", 0x0F: "PREINIT", 0x10: "PREINIT_ACK"
+        }
+        cmd_label = opcode_map.get(command_opcode, f"OP_{command_opcode:02X}")
+        metrics.record_packet('natneg', cmd_label)
+        
         handler = self.nn_commands.get(command_opcode, self._handle_unknown)
         
         try:

@@ -21,26 +21,36 @@
 Configuration module.
 """
 
-try:
-    # Python 2
-    import ConfigParser
-except ImportError:
-    # Python 3
-    import configparser as ConfigParser
+import configparser as ConfigParser
 
 import other.utils as utils
 
 
+import os
+
+def resolve_config_path(filename):
+    """Helper to transparently locate configs moved to the config/ repository."""
+    if not os.path.isabs(filename) and not filename.startswith('config/'):
+        # Anchor to the project root where this coordinator file resides
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate = os.path.join(base_dir, 'config', filename)
+        if os.path.exists(candidate):
+            return candidate
+    return filename
+
+
 def get_config_filename(filename='altwfc.cfg'):
     """Return the config filename that will be used."""
+    resolved = resolve_config_path(filename)
     try:
         config = ConfigParser.RawConfigParser(allow_no_value=True)
-        config.read(filename)
+        config.read(resolved)
         if config.getboolean('Config', 'AlternativeConfig'):
-            return config.get('Config', 'AlternativeConfigFile')
+            alt_file = config.get('Config', 'AlternativeConfigFile')
+            return resolve_config_path(alt_file)
     except Exception as e:
         pass
-    return filename
+    return resolved
 
 
 def get_ip_port(section, filename='altwfc.cfg'):

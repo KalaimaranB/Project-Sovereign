@@ -1,0 +1,59 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sovereign-ingress
+  annotations:
+    # Enables support for Traefik/NGINX standard forward headers
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+  - host: nas.nintendowifi.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sovereign-nas
+            port:
+              number: 9000
+  - host: naswii.nintendowifi.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sovereign-nas
+            port:
+              number: 9000
+  - host: conntest.nintendowifi.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sovereign-nas
+            port:
+              number: 9000
+  - host: dls1.nintendowifi.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sovereign-dls1
+            port:
+              number: 9003
+  - host: gamestats.gs.nintendowifi.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sovereign-gamestats-http
+            port:
+              number: 9002

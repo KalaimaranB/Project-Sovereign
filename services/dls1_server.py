@@ -134,6 +134,8 @@ class Dls1HTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             ret = command(self, client_address, post)
 
             if ret is not None:
+                if isinstance(ret, str):
+                    ret = ret.encode('latin-1')
                 self.send_header("Content-Length", str(len(ret)))
                 self.end_headers()
                 self.wfile.write(ret)
