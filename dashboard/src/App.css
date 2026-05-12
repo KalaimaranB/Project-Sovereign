@@ -109,8 +109,13 @@
   gap: 4px;
 }
 
-.trend-up { color: var(--accent-green); }
-.trend-down { color: var(--accent-red); }
+.trend-up {
+  color: var(--accent-green);
+}
+
+.trend-down {
+  color: var(--accent-red);
+}
 
 .stat-icon {
   padding: 12px;
@@ -221,7 +226,9 @@
 }
 
 @keyframes slide-up-fade {
-  to { opacity: 1; }
+  to {
+    opacity: 1;
+  }
 }
 
 .log-time {
@@ -236,16 +243,32 @@
   flex-shrink: 0;
 }
 
-.srv-nas { background: rgba(79, 172, 254, 0.1); color: #4facfe; }
-.srv-profile { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.srv-natneg { background: rgba(234, 179, 8, 0.1); color: #eab308; }
+.srv-nas {
+  background: rgba(79, 172, 254, 0.1);
+  color: #4facfe;
+}
+
+.srv-profile {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.srv-natneg {
+  background: rgba(234, 179, 8, 0.1);
+  color: #eab308;
+}
 
 .log-msg {
   color: #cbd5e0;
 }
 
-.lvl-error .log-msg { color: var(--accent-red); }
-.lvl-warn .log-msg { color: var(--accent-yellow); }
+.lvl-error .log-msg {
+  color: var(--accent-red);
+}
+
+.lvl-warn .log-msg {
+  color: var(--accent-yellow);
+}
 
 /* Service Grid */
 .service-status-list {
@@ -437,8 +460,52 @@
   transition: all 0.2s;
   margin-top: 0.5rem;
 }
+
 .file-remove-btn:hover {
   color: var(--accent-red);
   border-color: rgba(239, 68, 68, 0.3);
   background: rgba(239, 68, 68, 0.05);
+}
+
+
+/* Extra service badge colors for real log sources */
+.srv-qr {
+  background: rgba(234, 179, 8, 0.1);
+  color: #eab308;
+}
+
+.srv-system {
+  background: rgba(139, 92, 246, 0.1);
+  color: #a78bfa;
+}
+
+.srv-browser {
+  background: rgba(236, 72, 153, 0.1);
+  color: #f472b6;
+}
+
+/* The filter button for these services */
+.filter-btn {
+  white-space: nowrap;
+}
+
+/* Extra service badge colors for real log sources */
+.srv-qr {
+  background: rgba(234, 179, 8, 0.1);
+  color: #eab308;
+}
+
+.srv-system {
+  background: rgba(139, 92, 246, 0.1);
+  color: #a78bfa;
+}
+
+.srv-browser {
+  background: rgba(236, 72, 153, 0.1);
+  color: #f472b6;
+}
+
+/* The filter button for these services */
+.filter-btn {
+  white-space: nowrap;
 }

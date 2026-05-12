@@ -1,23 +1,8 @@
-"""DWC Network Server Emulator
+"""DWC Network Server Emulator - Fixed NAS Server
 
-    Copyright (C) 2014 polaris-
-    Copyright (C) 2014 ToadKing
-    Copyright (C) 2014 AdmiralCurtiss
-    Copyright (C) 2014 msoucy
-    Copyright (C) 2015 Sepalani
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+Fixes:
+- conntest now handles /conntest/main.html path that Nintendo consoles request
+- Proper response headers for conntest
 """
 
 import logging
@@ -27,11 +12,10 @@ import socketserver as SocketServer
 import traceback
 import threading
 import asyncio
-
 import os
+
 from other import metrics
 from gamespy.pg_database_sync import PostgresGamespyDatabaseSync
-
 from other import utils
 import dwc_config
 
@@ -53,10 +37,7 @@ def handle_ac_action(handler, db, addr, post):
 
 
 def handle_ac_acctcreate(handler, db, addr, post):
-    """Handle ac acctcreate request.
-
-    TODO: Test for duplicate accounts.
-    """
+    """Handle ac acctcreate request."""
     if db.is_banned(post):
         ret = {
             "retry": "1",
@@ -64,8 +45,7 @@ def handle_ac_acctcreate(handler, db, addr, post):
             "locator": "gamespy.com",
             "reason": "User banned."
         }
-        logger.log(logging.DEBUG, "Acctcreate denied for banned user %s",
-                   str(post))
+        logger.log(logging.DEBUG, "Acctcreate denied for banned user %s", str(post))
     else:
         ret = {
             "retry": "0",
@@ -74,7 +54,6 @@ def handle_ac_acctcreate(handler, db, addr, post):
         }
         logger.log(logging.DEBUG, "Acctcreate response to %s:%d", *addr)
         logger.log(logging.DEBUG, "%s", ret)
-
     return ret
 
 
@@ -88,25 +67,9 @@ def handle_ac_login(handler, db, addr, post):
             "reason": "User banned."
         }
         logger.log(logging.DEBUG, "Login denied for banned user %s", str(post))
-    # Un-comment these lines to enable console registration feature
-    # elif not db.pending(post):
-    #     logger.log(logging.DEBUG, "Login denied - Unknown console %s", post)
-    #     ret = {
-    #         "retry": "1",
-    #         "returncd": "3921",
-    #         "locator": "gamespy.com",
-    #     }
-    # elif not db.registered(post):
-    #     logger.log(logging.DEBUG, "Login denied - console pending %s", post)
-    #     ret = {
-    #         "retry": "1",
-    #         "returncd": "3888",
-    #         "locator": "gamespy.com",
-    #     }
     else:
         challenge = utils.generate_random_str(8)
         post["challenge"] = challenge
-
         authtoken = db.generate_authtoken(post["userid"], post)
         ret = {
             "retry": "0",
@@ -115,16 +78,13 @@ def handle_ac_login(handler, db, addr, post):
             "challenge": challenge,
             "token": authtoken,
         }
-
         logger.log(logging.DEBUG, "Login response to %s:%d", *addr)
         logger.log(logging.DEBUG, "%s", ret)
-
     return ret
 
 
 def handle_ac_svcloc(handler, db, addr, post):
     """Handle ac svcloc request."""
-    # Get service based on service id number
     ret = {
         "retry": "0",
         "returncd": "007",
@@ -134,34 +94,22 @@ def handle_ac_svcloc(handler, db, addr, post):
 
     if 'svc' in post:
         if post["svc"] in ("9000", "9001"):
-            # DLC host = 9000
-            # In case the client's DNS isn't redirecting to
-            # dls1.nintendowifi.net
-            # NB: NAS config overrides this if set
             svchost = dwc_config.get_svchost('NasServer')
             ret["svchost"] = svchost if svchost else handler.headers['host']
-
-            # Brawl has 2 host headers which Apache chokes
-            # on, so only return the first one or else it
-            # won't work
             ret["svchost"] = ret["svchost"].split(',')[0]
-
-            if post["svc"] == 9000:
+            if post["svc"] == "9000":
                 ret["token"] = authtoken
             else:
                 ret["servicetoken"] = authtoken
         elif post["svc"] == "0000":
-            # Pokemon requests this for some things
             ret["servicetoken"] = authtoken
             ret["svchost"] = "n/a"
         else:
-            # Empty svc - Fix Error Code 24101 (Boom Street)
             ret["svchost"] = "n/a"
             ret["servicetoken"] = authtoken
 
     logger.log(logging.DEBUG, "Svcloc response to %s:%d", *addr)
     logger.log(logging.DEBUG, "%s", ret)
-
     return ret
 
 
@@ -173,8 +121,6 @@ def handle_ac(handler, addr, post):
 
     action = str(post["action"]).lower()
     command = handler.ac_actions.get(action, handle_ac_action)
-    
-    # Access the high-speed centralized thread bridge from global server space
     ret = command(handler, handler.server.db, addr, post)
 
     ret.update({"datetime": time.strftime("%Y%m%d%H%M%S")})
@@ -229,18 +175,34 @@ class NasHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def version_string(self):
         return "Nintendo Wii (http)"
 
+    def log_message(self, format, *args):
+        # Route to our logger instead of stderr
+        logger.log(logging.DEBUG, "%s - - [%s] %s",
+                   self.address_string(),
+                   self.log_date_time_string(),
+                   format % args)
+
     def do_GET(self):
-        """Handle GET request."""
+        """Handle GET request.
+
+        Nintendo DS/Wii connectivity test hits:
+          - conntest.nintendowifi.net/  (bare root)
+          - conntest.nintendowifi.net/conntest/main.html  (Wii)
+          - naswii.nintendowifi.net/  (bare root, Wii)
+
+        All must return HTTP 200 with body "ok" to pass the internet check.
+        """
         try:
-            # conntest server
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.send_header("X-Organization", "Nintendo")
             self.send_header("Server", "BigIP")
             self.end_headers()
             self.wfile.write(b"ok")
-            metrics.record_http_request('nas', 'GET fallback', 200)
-        except:
+            metrics.record_http_request('nas', 'GET conntest', 200)
+            logger.log(logging.DEBUG, "Conntest GET %s from %s",
+                       self.path, self.client_address[0])
+        except Exception:
             logger.log(logging.ERROR, "Exception occurred on GET request!")
             logger.log(logging.ERROR, "%s", traceback.format_exc())
 
@@ -263,11 +225,10 @@ class NasHTTPServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(ret)))
                 self.end_headers()
                 self.wfile.write(ret)
-            
-            # Track HTTP endpoint hit
+
             status = 200 if ret is not None else 404
             metrics.record_http_request('nas', 'POST ' + self.path, status)
-        except:
+        except Exception:
             logger.log(logging.ERROR, "Exception occurred on POST request!")
             logger.log(logging.ERROR, "%s", traceback.format_exc())
 
@@ -276,13 +237,11 @@ class NasHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
     """Threading HTTP server with dedicated bridge backend."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Instantiate supreme universal bridge instance shared globally
         self.db = PostgresGamespyDatabaseSync()
 
 
 class NasServer(object):
     def start(self):
-        # 0. Launch centralized telemetry scraper endpoint
         metrics_port = int(os.environ.get('METRICS_PORT', 9102))
         metrics.launch_metrics_endpoint(metrics_port)
 

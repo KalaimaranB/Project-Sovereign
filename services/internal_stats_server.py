@@ -25,6 +25,7 @@ import time
 import datetime
 import json
 import logging
+import os
 
 from gamespy.redis_cache import RedisGamespyCacheSync
 
@@ -34,17 +35,8 @@ import dwc_config
 logger = dwc_config.get_logger('InternalStatsServer')
 
 
-# Legacy multi-process class removed in favor of pure stateless Redis aggregation.
-
-
 class StatsPage(resource.Resource):
-    """Servers statistics webpage.
-
-    Format attributes:
-     - header
-     - row
-     - footer
-    """
+    """Servers statistics webpage."""
     isLeaf = True
     header = """<html>
     <table border='1'>
@@ -55,17 +47,17 @@ class StatsPage(resource.Resource):
         <tr>
             <td>%s</td>
             <td><center>%d</center></td>
-        </tr>"""  # % (game, len(server_list[game]))
+        </tr>"""
     footer = """</table>
     <br>
     <i>Last updated: %s</i><br>
-    </html>"""  # % (self.stats.get_last_update_time())
+    </html>"""
 
     def __init__(self, stats):
         self.stats = stats
 
     def render_GET(self, request):
-        if "/".join(request.postpath) == "json":
+        if b"/".join(request.postpath) == b"json":
             raw = True
             force_update = True
         else:
@@ -75,27 +67,26 @@ class StatsPage(resource.Resource):
         server_list = self.stats.get_server_list(force_update)
 
         if raw:
-            # List of keys to be removed
             restricted = ["publicip", "__session__", "localip0", "localip1"]
-
-            # Filter out certain fields before displaying raw data
             if server_list is not None:
                 for game in server_list:
-                    for server in server_list[game]:
+                    for srv in server_list[game]:
                         for r in restricted:
-                            if r in server:
-                                server.pop(r, None)
-
+                            if r in srv:
+                                srv.pop(r, None)
             output = json.dumps(server_list)
-
         else:
             output = self.header
             if server_list is not None:
-                output += "".join(self.row % (game, len(server_list[game]))
-                                  for game in server_list
-                                  if server_list[game])
+                output += "".join(
+                    self.row % (game, len(server_list[game]))
+                    for game in server_list
+                    if server_list[game]
+                )
             output += self.footer % (self.stats.get_last_update_time())
 
+        if isinstance(output, str):
+            output = output.encode('utf-8')
         return output
 
 
@@ -109,12 +100,13 @@ class InternalStatsServer(object):
         self.last_update = 0
         self.next_update = 0
         self.server_list = None
-        # The number of seconds to wait before updating the server list
         self.seconds_per_update = 60
+        self.cache = None
 
     def start(self):
-        # Connect to modern stateless Redis aggregation instead of coupled legacy manager
-        self.cache = RedisGamespyCacheSync()
+        # Pull REDIS_URL from environment (set by docker-compose / k8s configmap)
+        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        self.cache = RedisGamespyCacheSync(url=redis_url)
 
         site = server.Site(StatsPage(self))
         reactor.listenTCP(dwc_config.get_port('InternalStatsServer'), site)
@@ -126,25 +118,27 @@ class InternalStatsServer(object):
             pass
 
     def get_server_list(self, force_update=False):
+        if self.cache is None:
+            return {}
+
         if force_update or self.next_update == 0 or \
            self.next_update - time.time() <= 0:
             self.last_update = time.time()
             self.next_update = time.time() + self.seconds_per_update
-            
-            # Direct stateless pull of the entire system fleet simultaneously
+
             raw_list = self.cache.get_all_servers_for_game()
-            
-            # Transform flattened list back into the legacy nested grouped dict {gamename: [servers]}
-            # to satisfy the existing html/json rendering logic perfectly.
+
             grouped = {}
             for s in raw_list:
                 gname = s.get('gamename', 'unknown')
                 if gname not in grouped:
                     grouped[gname] = []
                 grouped[gname].append(s)
-                
+
             self.server_list = grouped
-            logger.log(logging.DEBUG, "Fetched %d servers across %d titles.", len(raw_list), len(grouped))
+            logger.log(logging.DEBUG,
+                       "Fetched %d servers across %d titles.",
+                       len(raw_list), len(grouped))
 
         return self.server_list
 

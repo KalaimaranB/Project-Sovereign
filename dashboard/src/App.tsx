@@ -32,7 +32,7 @@ import './App.css';
 interface Log {
   id: string;
   timestamp: string;
-  service: 'nas' | 'profile' | 'natneg';
+  service: 'nas' | 'profile' | 'natneg' | 'qr' | 'browser' | 'system';
   level: 'info' | 'warn' | 'error';
   message: string;
 }
@@ -43,21 +43,7 @@ interface ChartPoint {
   latency: number;
 }
 
-const RANDOM_IPS = ['192.168.1.45', '10.244.1.12', '24.15.88.230', '98.139.18.4', '172.217.7.14'];
-const GAMES = ['mariokartwii', 'metroidprime', 'tetrisds', 'pokemonbw'];
-
-const SIMULATED_MESSAGES = [
-  { service: 'profile' as const, level: 'info' as const, msg: (ip: string, game: string) => `New stream opened from ${ip}` },
-  { service: 'profile' as const, level: 'info' as const, msg: (ip: string, game: string) => `Processing COMMAND: login (gameid: ${game})` },
-  { service: 'profile' as const, level: 'info' as const, msg: (ip: string, game: string) => `Auth success: generated profile token` },
-  { service: 'natneg' as const, level: 'info' as const, msg: (ip: string, game: string) => `Received NN_INIT command from ${ip}` },
-  { service: 'natneg' as const, level: 'info' as const, msg: (ip: string, game: string) => `Successfully mapped local address to public NAT port` },
-  { service: 'nas' as const, level: 'info' as const, msg: (ip: string, game: string) => `POST /ac connection successful - 200 OK` },
-  { service: 'nas' as const, level: 'info' as const, msg: (ip: string, game: string) => `GET /conntest triggered fallback response - ok` },
-  { service: 'profile' as const, level: 'warn' as const, msg: (ip: string, game: string) => `High latent Redis lookup overhead detected` },
-  { service: 'natneg' as const, level: 'warn' as const, msg: (ip: string, game: string) => `Retrying ADDR_CHECK handshake for ${ip}` },
-  { service: 'nas' as const, level: 'error' as const, msg: (ip: string, game: string) => `User ${ip} attempted connection while marked banned!` }
-];
+// Simulated Data Pools removed in favor of live log ingestion.
 
 // ---------------------------------------------------------
 // Main Component
@@ -70,7 +56,8 @@ export default function App() {
   const [dbLatency, setDbLatency] = useState(8);
   const [cpuLoad, setCpuLoad] = useState(24.5);
   const [logs, setLogs] = useState<Log[]>([]);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'nas' | 'profile' | 'natneg'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'nas' | 'profile' | 'natneg' | 'qr' | 'browser' | 'system'>('all');
+  const [autoScroll, setAutoScroll] = useState(true);
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -159,78 +146,71 @@ export default function App() {
       const timeStr = new Date(Date.now() - i * 2000).toLocaleTimeString([], { hour12: false });
       initData.push({
         time: timeStr.slice(-8),
-        pps: Math.floor(Math.random() * 100) + 250,
-        latency: Math.floor(Math.random() * 5) + 5
+        pps: 0,
+        latency: 0
       });
     }
     setChartData(initData);
-
-    // Initial batch of logs
-    const initialLogs: Log[] = [];
-    for (let i = 0; i < 8; i++) {
-      initialLogs.push(generateSimulatedLog());
-    }
-    setLogs(initialLogs);
   }, []);
 
-  // Real-time Engine Simulator loop
+  // Real-time Engine Polling Loop
   useEffect(() => {
-    const interval = setInterval(() => {
-      // 1. Tick Stats marginally
-      setActivePlayers(prev => {
-        const delta = Math.random() > 0.5 ? 1 : -1;
-        const chance = Math.random() > 0.6 ? delta : 0;
-        return Math.max(50, Math.min(500, prev + chance));
-      });
-      
-      const nextPps = Math.floor(Math.random() * 120) + 280;
-      setPps(nextPps);
-      
-      setDbLatency(Math.floor(Math.random() * 4) + 6);
-      setCpuLoad(prev => {
-        const walk = (Math.random() - 0.5) * 2;
-        return Math.max(10, Math.min(80, Number((prev + walk).toFixed(1))));
-      });
+    const apiHost = window.location.hostname;
 
-      // 2. Append dynamic chart point
-      const timeStr = new Date().toLocaleTimeString([], { hour12: false }).slice(-8);
-      setChartData(prev => [
-        ...prev.slice(1),
-        {
-          time: timeStr,
-          pps: nextPps,
-          latency: Math.floor(Math.random() * 8) + 5
+    const pollData = async () => {
+      try {
+        // 1. Poll dynamic stats
+        const statsRes = await fetch(`http://${apiHost}:9999/api/stats`);
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setActivePlayers(statsData.active_players);
+          setPps(statsData.pps);
+          setDbLatency(statsData.db_latency);
+          setCpuLoad(statsData.cpu_load);
+
+          // Append dynamic chart point
+          const timeStr = new Date().toLocaleTimeString([], { hour12: false }).slice(-8);
+          setChartData(prev => [
+            ...prev.slice(1),
+            {
+              time: timeStr,
+              pps: statsData.pps,
+              latency: statsData.db_latency
+            }
+          ]);
         }
-      ]);
-
-      // 3. 80% chance of a new log entry per tick
-      if (Math.random() > 0.2) {
-        setLogs(prev => [...prev.slice(-49), generateSimulatedLog()]);
+      } catch (err) {
+        console.error("Failed to poll metrics:", err);
       }
-    }, 2000);
 
+      try {
+        // 2. Poll logs
+        const logsRes = await fetch(`http://${apiHost}:9999/api/logs`);
+        if (logsRes.ok) {
+          const logsData = await logsRes.json();
+          setLogs(logsData);
+        }
+      } catch (err) {
+        console.error("Failed to poll logs:", err);
+      }
+    };
+
+    // Immediate invocation
+    pollData();
+
+    const interval = setInterval(pollData, 2000);
     return () => clearInterval(interval);
   }, []);
 
   // Auto-scroll logs terminal
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+    if (autoScroll) {
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, autoScroll]);
 
   // Helper helper log builder
-  function generateSimulatedLog(): Log {
-    const template = SIMULATED_MESSAGES[Math.floor(Math.random() * SIMULATED_MESSAGES.length)];
-    const ip = RANDOM_IPS[Math.floor(Math.random() * RANDOM_IPS.length)];
-    const game = GAMES[Math.floor(Math.random() * GAMES.length)];
-    const timestamp = new Date().toLocaleTimeString([], { hour12: false, fractionalSecondDigits: 3 } as any);
-    return {
-      id: Math.random().toString(36).substring(2, 9),
-      timestamp,
-      service: template.service,
-      level: template.level,
-      message: template.msg(ip, game)
-    };
-  }
+  // Helper helper log builder removed.
 
   const filteredLogs = logs.filter(log => activeFilter === 'all' || log.service === activeFilter);
 
@@ -245,7 +225,7 @@ export default function App() {
             <h1 className="text-gradient">Sovereign Engine</h1>
             <p style={{fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px'}}>SRE OBSERVE STACK v1.0.0</p>
           </div>
-          <span>LIVE MOCK TRAFFIC</span>
+          <span>LIVE TELEMETRY</span>
         </div>
         <div className="system-status">
           <div className="status-badge">
@@ -525,12 +505,22 @@ export default function App() {
 
         <div className="log-console-container">
           <div className="console-toolbar">
-            <div className="toolbar-buttons">
+            <div className="toolbar-buttons" style={{ overflowX: 'auto', maxWidth: 'calc(100% - 160px)' }}>
               <button className={`filter-btn ${activeFilter === 'all' ? 'active' : ''}`} onClick={() => setActiveFilter('all')}>ALL SERVICES</button>
               <button className={`filter-btn ${activeFilter === 'nas' ? 'active' : ''}`} onClick={() => setActiveFilter('nas')}>NAS</button>
               <button className={`filter-btn ${activeFilter === 'profile' ? 'active' : ''}`} onClick={() => setActiveFilter('profile')}>PROFILE</button>
               <button className={`filter-btn ${activeFilter === 'natneg' ? 'active' : ''}`} onClick={() => setActiveFilter('natneg')}>NATNEG</button>
+              <button className={`filter-btn ${activeFilter === 'qr' ? 'active' : ''}`} onClick={() => setActiveFilter('qr')}>QR</button>
+              <button className={`filter-btn ${activeFilter === 'browser' ? 'active' : ''}`} onClick={() => setActiveFilter('browser')}>BROWSER</button>
+              <button className={`filter-btn ${activeFilter === 'system' ? 'active' : ''}`} onClick={() => setActiveFilter('system')}>SYSTEM</button>
             </div>
+            <button 
+              className={`filter-btn ${autoScroll ? 'active' : ''}`} 
+              onClick={() => setAutoScroll(!autoScroll)}
+              style={{ marginLeft: 'auto', borderColor: autoScroll ? 'var(--accent-green)' : undefined, whiteSpace: 'nowrap' }}
+            >
+              {autoScroll ? 'SCROLL LOCK ON' : 'SCROLL LOCK OFF'}
+            </button>
           </div>
           
           <div className="console-lines">
