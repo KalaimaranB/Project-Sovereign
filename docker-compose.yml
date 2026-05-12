@@ -31,6 +31,8 @@ services:
       - "80:9000"
     depends_on:
       - postgres
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_qr:
     build: .
@@ -43,6 +45,8 @@ services:
       - TRUST_ALL_PROXIES=1
     depends_on:
       - postgres
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_profile:
     build: .
@@ -56,6 +60,8 @@ services:
       - "29900:29900"
     depends_on:
       - postgres
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_natneg:
     build: .
@@ -67,6 +73,8 @@ services:
       - TRUST_ALL_PROXIES=1
     depends_on:
       - postgres
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_browser:
     build: .
@@ -79,6 +87,8 @@ services:
       - "28910:28910"
     depends_on:
       - redis
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_player_search:
     build: .
@@ -91,6 +101,8 @@ services:
       - "29901:29901"
     depends_on:
       - postgres
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_gamestats:
     build: .
@@ -103,6 +115,8 @@ services:
       - "29920:29920"
     depends_on:
       - postgres
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_dls1:
     build: .
@@ -111,6 +125,8 @@ services:
     command: python services/dls1_server.py
     ports:
       - "9003:9003"
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_storage:
     build: .
@@ -119,6 +135,8 @@ services:
     command: python services/storage_server.py
     ports:
       - "8000:8000"
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_register:
     build: .
@@ -127,6 +145,8 @@ services:
     command: python services/register_page.py
     ports:
       - "9998:9998"
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_admin:
     build: .
@@ -135,6 +155,8 @@ services:
     command: python services/admin_page_server.py
     ports:
       - "9009:9009"
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_internal_stats:
     build: .
@@ -143,6 +165,8 @@ services:
     command: python services/internal_stats_server.py
     ports:
       - "9001:9001"
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_stats_http:
     build: .
@@ -151,6 +175,8 @@ services:
     command: python services/gamestats_server_http.py
     ports:
       - "9002:9002"
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_proxy:
     build: ./dpi_proxy
@@ -192,6 +218,8 @@ services:
     command: sh -c "gcc -O3 -Wall -o /app/tools/sovereign_patcher /app/tools/nossl_patch_arm9.c && python /app/services/patcher_server.py"
     ports:
       - "9999:9999"
+    volumes:
+      - sovereign_logs:/app/logs
 
   sovereign_dashboard:
     build: ./dashboard
@@ -203,3 +231,4 @@ services:
 volumes:
   postgres_data:
   wireguard_data:
+  sovereign_logs:
