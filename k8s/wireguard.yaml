@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wireguard-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sovereign-vpn
+  labels:
+    app: sovereign-vpn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sovereign-vpn
+  template:
+    metadata:
+      labels:
+        app: sovereign-vpn
+    spec:
+      containers:
+      - name: wireguard
+        image: ghcr.io/wg-easy/wg-easy:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: WG_HOST
+          value: "YOUR_SERVER_IP_OR_DDNS"
+        - name: PASSWORD
+          value: "insecure_vpn_admin_password"
+        - name: WG_DEFAULT_DNS
+          value: "1.1.1.1"
+        - name: WG_ALLOWED_IPS
+          value: "10.8.0.0/24,172.16.0.0/12"
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN", "SYS_MODULE"]
+          privileged: false
+        ports:
+        - containerPort: 51820
+          protocol: UDP
+          name: wg-port
+        - containerPort: 51821
+          protocol: TCP
+          name: web-port
+        volumeMounts:
+        - name: wg-data
+          mountPath: /etc/wireguard
+      volumes:
+      - name: wg-data
+        persistentVolumeClaim:
+          claimName: wireguard-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sovereign-vpn
+spec:
+  selector:
+    app: sovereign-vpn
+  type: LoadBalancer
+  ports:
+    - name: tunnel
+      protocol: UDP
+      port: 51820
+      targetPort: 51820
+    - name: dashboard
+      protocol: TCP
+      port: 51821
+      targetPort: 51821

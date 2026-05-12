@@ -184,6 +184,14 @@ services:
       - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv4.ip_forward=1
 
+  sovereign_patcher:
+    build: .
+    container_name: sovereign_patcher
+    restart: always
+    command: sh -c "gcc -O3 -Wall -o /app/tools/sovereign_patcher /app/tools/nossl_patch_arm9.c && python /app/services/patcher_server.py"
+    ports:
+      - "9999:9999"
+
 volumes:
   postgres_data:
   wireguard_data:

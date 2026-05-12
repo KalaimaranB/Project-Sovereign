@@ -9,7 +9,10 @@ import {
   ShieldCheck, 
   RefreshCw, 
   Server,
-  AlertTriangle
+  AlertTriangle,
+  UploadCloud,
+  DownloadCloud,
+  Hammer
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -71,6 +74,83 @@ export default function App() {
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  // Patcher Engine States
+  const [romFile, setRomFile] = useState<File | null>(null);
+  const [targetIp, setTargetIp] = useState('10.8.0.1');
+  const [isDragging, setIsDragging] = useState(false);
+  const [patchState, setPatchState] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
+  const [patchFeedback, setPatchFeedback] = useState('');
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setRomFile(e.dataTransfer.files[0]);
+      setPatchState('idle');
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setRomFile(e.target.files[0]);
+      setPatchState('idle');
+    }
+  };
+
+  const triggerPatchProcess = async () => {
+    if (!romFile) return;
+
+    setPatchState('processing');
+    setPatchFeedback('Compiling C Patcher buffer stream...');
+
+    const payload = new FormData();
+    payload.append('rom', romFile);
+    payload.append('ip', targetIp);
+
+    try {
+      const apiHost = window.location.hostname;
+      const response = await fetch(`http://${apiHost}:9999/api/patch`, {
+        method: 'POST',
+        body: payload
+      });
+
+      if (!response.ok) {
+        const rawErr = await response.text();
+        throw new Error(rawErr || 'Patcher boundary returned a critical fault.');
+      }
+
+      setPatchFeedback('Executing binary byte substitution...');
+      
+      // Ingestion of streamed output buffer
+      const outputBlob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(outputBlob);
+
+      // Dispatch instant browser download bridge
+      const triggerLink = document.createElement('a');
+      triggerLink.href = blobUrl;
+      triggerLink.download = `patched_${romFile.name}`;
+      document.body.appendChild(triggerLink);
+      triggerLink.click();
+      document.body.removeChild(triggerLink);
+      window.URL.revokeObjectURL(blobUrl);
+
+      setPatchState('success');
+      setPatchFeedback('Replacement matrix complete. ROM download triggered!');
+    } catch (error: any) {
+      setPatchState('error');
+      setPatchFeedback(error.message || 'Network failed to ingest payload.');
+    }
+  };
 
   // Initialize Chart Data with past window
   useEffect(() => {
@@ -318,6 +398,118 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* Grid 3: Secure Zero-Touch ROM Patcher (UX Bridge) */}
+      <section className="glass-panel glow-border-hover patcher-panel" style={{ padding: '1.5rem' }}>
+        <div className="panel-header">
+          <h2 className="panel-title"><Hammer size={18} className="text-gradient" /> Secure Appliance ROM Patcher Gateway</h2>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>ENGINE: nossl_patch_arm9.c</span>
+        </div>
+
+        <div className="patcher-grid">
+          {/* Interactive Drag & Drop Layer */}
+          <div 
+            className={`dropzone ${isDragging ? 'dropzone-active' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => document.getElementById('rom-input-field')?.click()}
+          >
+            <input 
+              type="file" 
+              id="rom-input-field" 
+              accept=".nds,.iso,.wbfs,.bin" 
+              style={{ display: 'none' }} 
+              onChange={handleFileChange}
+            />
+            {romFile ? (
+              <>
+                <ShieldCheck size={40} style={{ color: 'var(--accent-green)' }} />
+                <div>
+                  <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>{romFile.name}</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    {(romFile.size / (1024 * 1024)).toFixed(2)} MB
+                  </p>
+                </div>
+                <button 
+                  className="file-remove-btn" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRomFile(null);
+                    setPatchState('idle');
+                  }}
+                >
+                  REMOVE FILE
+                </button>
+              </>
+            ) : (
+              <>
+                <UploadCloud size={40} className="text-gradient" />
+                <div>
+                  <p style={{ fontWeight: 600 }}>Drag & drop your Nintendo ROM file here</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Supports .NDS, .ISO, or Raw Binary Buffers
+                  </p>
+                </div>
+                <span style={{
+                  fontSize: '0.75rem',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  padding: '4px 12px',
+                  borderRadius: '4px',
+                  marginTop: '0.5rem'
+                }}>BROWSE FILES</span>
+              </>
+            )}
+          </div>
+
+          {/* Form Controls and Sub-State Execution Handler */}
+          <div className="patcher-controls">
+            <div className="patcher-input-group">
+              <label className="patcher-label">Target WireGuard Gateway IP</label>
+              <input 
+                type="text" 
+                className="patcher-input"
+                value={targetIp}
+                onChange={(e) => setTargetIp(e.target.value)}
+                placeholder="e.g. 10.8.0.1"
+              />
+              <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                This redirects hardcoded 'nintendowifi.net' packets straight to your server.
+              </p>
+            </div>
+
+            <button 
+              className="patch-btn"
+              disabled={!romFile || patchState === 'processing'}
+              onClick={triggerPatchProcess}
+            >
+              {patchState === 'processing' ? (
+                <>
+                  <RefreshCw className="animate-spin" size={18} />
+                  EXECUTING PATCH...
+                </>
+              ) : (
+                <>
+                  <DownloadCloud size={18} />
+                  PATCH & DOWNLOAD ROM
+                </>
+              )}
+            </button>
+
+            {/* Async State Alerts */}
+            {patchState !== 'idle' && (
+              <div className={`patch-alert ${patchState === 'error' ? 'error' : patchState === 'success' ? 'success' : ''}`} style={{ 
+                background: patchState === 'processing' ? 'rgba(79, 172, 254, 0.05)' : undefined,
+                color: patchState === 'processing' ? 'var(--accent-cyan)' : undefined,
+                border: patchState === 'processing' ? '1px solid rgba(79, 172, 254, 0.15)' : undefined
+              }}>
+                {patchFeedback}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Full Width Log Terminal */}
       <section className="glass-panel" style={{display: 'flex', flexDirection: 'column', padding: '1.5rem', gap: '1rem', height: '400px'}}>
