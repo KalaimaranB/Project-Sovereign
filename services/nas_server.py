@@ -119,7 +119,8 @@ def handle_ac(handler, addr, post):
                handler.path, *addr)
     logger.log(logging.DEBUG, "%s", post)
 
-    action = str(post["action"]).lower()
+    action_bytes = post.get("action", b"")
+    action = action_bytes.decode('latin-1').lower() if isinstance(action_bytes, bytes) else str(action_bytes).lower()
     command = handler.ac_actions.get(action, handle_ac_action)
     ret = command(handler, handler.server.db, addr, post)
 

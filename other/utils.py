@@ -367,30 +367,23 @@ def pretty_print_hex(orig_data, cols=16, sep=' '):
 
 def qs_to_dict(s):
     """Convert query string to dict."""
+    if isinstance(s, bytes):
+        s = s.decode('latin-1')
     ret = urlparse.parse_qs(s, True)
 
+    out = {}
     for k, v in ret.items():
+        val_str = urlparse.unquote(v[0])
         try:
-            # I'm not sure about the replacement for '-', but it'll at
-            # least let it be decoded.
-            # For the most part it's not important since it's mostly
-            # used for the devname/ingamesn fields.
-            ret[k] = base64.b64decode(urlparse.unquote(v[0])
-                                              .replace("*", "=")
-                                              .replace("?", "/")
-                                              .replace(">", "+")
-                                              .replace("-", "/"))
-        except TypeError:
-            """
-            print("Could not decode following string: ret[%s] = %s"
-                  % (k, v[0]))
-            print("url: %s" % s)
-            """
-            # If you don't assign it like this it'll be a list, which
-            # breaks other code.
-            ret[k] = v[0]
+            out[k] = base64.b64decode(val_str
+                                      .replace("*", "=")
+                                      .replace("?", "/")
+                                      .replace(">", "+")
+                                      .replace("-", "/"))
+        except Exception:
+            out[k] = val_str.encode('latin-1')
 
-    return ret
+    return out
 
 
 def dict_to_qs(d):
@@ -399,7 +392,13 @@ def dict_to_qs(d):
     nas(wii).nintendowifi.net has a URL query-like format but does not
     use encoding for special characters.
     """
-    # Dictionary comprehension is used to not modify the original
-    ret = {k: base64.b64encode(v).replace("=", "*") for k, v in d.items()}
+    ret = {}
+    for k, v in d.items():
+        if isinstance(v, str):
+            v = v.encode('latin-1')
+        elif isinstance(v, int):
+            v = str(v).encode('latin-1')
+        ret[k] = base64.b64encode(v).replace(b"=", b"*").decode('latin-1')
 
-    return "&".join("{!s}={!s}".format(k, v) for k, v in ret.items()) + "\r\n"
+    qs = "&".join(f"{k}={v}" for k, v in ret.items())
+    return qs.encode('latin-1') + b"\r\n"

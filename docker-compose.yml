@@ -218,8 +218,12 @@ services:
     container_name: sovereign_patcher
     restart: always
     command: sh -c "gcc -O3 -Wall -o /app/tools/sovereign_patcher /app/tools/nossl_patch_arm9.c && python /app/services/patcher_server.py"
+    environment:
+      - REDIS_URL=redis://sovereign_redis:6379/0
     ports:
       - "9999:9999"
+    depends_on:
+      - redis
     volumes:
       - sovereign_logs:/app/logs
 
