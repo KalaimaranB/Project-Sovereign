@@ -15,9 +15,12 @@ echo "Working directory: $REPO_DIR"
 echo ""
 
 # ---- 1. Pull latest code ----
-echo "[1/5] Pulling latest changes from git..."
+echo "[1/6] Pulling latest changes from git..."
+# Stash any local changes (like file permission changes) so the pull doesn't fail
+git stash
 git fetch --all
 git pull --rebase
+git stash pop || true
 
 # ---- 2. Rebuild containers that changed ----
 echo ""
