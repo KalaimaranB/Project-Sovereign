@@ -1,7 +1,10 @@
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: postgres
     restart: always
+    networks:
+      - sovereign-net
     environment:
       POSTGRES_USER: dwc_admin
       POSTGRES_PASSWORD: insecure_dev_password
@@ -12,7 +15,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
   redis:
     image: redis:alpine
+    container_name: redis
     restart: always
+    networks:
+      - sovereign-net
     ports:
       - "6379:6379"
 
@@ -21,7 +27,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_nas
     restart: always
-    command: python services/nas_server.py
+    networks:
+      - sovereign-net
     environment:
       - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
       - REDIS_URL=redis://redis:6379/0
@@ -38,7 +45,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_qr
     restart: always
-    command: python services/gamespy_qr_server.py
+    networks:
+      - sovereign-net
     environment:
       - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
       - REDIS_URL=redis://redis:6379/0
@@ -53,7 +61,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_profile
     restart: always
-    command: python services/gamespy_profile_server.py
+    networks:
+      - sovereign-net
     environment:
       - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
       - REDIS_URL=redis://redis:6379/0
@@ -69,7 +78,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_natneg
     restart: always
-    command: python services/gamespy_natneg_server.py
+    networks:
+      - sovereign-net
     environment:
       - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
       - TRUST_ALL_PROXIES=1
@@ -83,7 +93,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_browser
     restart: always
-    command: python services/gamespy_server_browser_server.py
+    networks:
+      - sovereign-net
     environment:
       - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
       - REDIS_URL=redis://redis:6379/0
@@ -100,7 +111,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_player_search
     restart: always
-    command: python services/gamespy_player_search_server.py
+    networks:
+      - sovereign-net
     environment:
       - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
     ports:
@@ -115,7 +127,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_gamestats
     restart: always
-    command: python services/gamespy_gamestats_server.py
+    networks:
+      - sovereign-net
     environment:
       - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
       - REDIS_URL=redis://redis:6379/0
@@ -132,6 +145,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_dls1
     restart: always
+    networks:
+      - sovereign-net
     command: python services/dls1_server.py
     ports:
       - "9003:9003"
@@ -143,6 +158,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_storage
     restart: always
+    networks:
+      - sovereign-net
     command: python services/storage_server.py
     ports:
       - "8000:8000"
@@ -154,6 +171,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_register
     restart: always
+    networks:
+      - sovereign-net
     command: python services/register_page.py
     ports:
       - "9998:9998"
@@ -165,6 +184,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_admin
     restart: always
+    networks:
+      - sovereign-net
     command: python services/admin_page_server.py
     ports:
       - "9009:9009"
@@ -176,7 +197,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_internal_stats
     restart: always
-    command: python services/internal_stats_server.py
+    networks:
+      - sovereign-net
     environment:
       - REDIS_URL=redis://redis:6379/0
     ports:
@@ -191,7 +213,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_stats_http
     restart: always
-    command: python services/gamestats_server_http.py
+    networks:
+      - sovereign-net
     environment:
       - REDIS_URL=redis://redis:6379/0
     ports:
@@ -206,6 +229,8 @@ services:
     build: ./dpi_proxy
     container_name: sovereign_proxy
     restart: always
+    networks:
+      - sovereign-net
     command: 27900 sovereign_qr 27900 qr 27901 sovereign_natneg 27901 natneg
     ports:
       - "27900:27900/udp"
@@ -239,7 +264,8 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_patcher
     restart: always
-    command: sh -c "gcc -O3 -Wall -o /app/tools/sovereign_patcher /app/tools/nossl_patch_arm9.c && python /app/services/patcher_server.py"
+    networks:
+      - sovereign-net
     environment:
       - REDIS_URL=redis://redis:6379/0
     ports:
@@ -254,6 +280,8 @@ services:
     build: ./dashboard
     container_name: sovereign_dashboard
     restart: always
+    networks:
+      - sovereign-net
     ports:
       - "5173:5173"
     volumes:
@@ -264,9 +292,10 @@ services:
     image: sovereign-backend:latest
     container_name: sovereign_dns
     restart: always
-    command: python services/dns_server.py
+    networks:
+      - sovereign-net
     environment:
-      - DWC_HOST=10.8.0.1
+      - DWC_HOST=192.168.1.78
     ports:
       - "53:53/udp"
     volumes:
@@ -283,6 +312,10 @@ services:
     volumes:
       - ./:/app
       - sovereign_logs:/app/logs
+
+networks:
+  sovereign-net:
+    driver: bridge
 
 volumes:
   postgres_data:

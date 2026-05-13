@@ -304,9 +304,13 @@ class PostgresGamespyDatabase(IGamespyDatabase):
             
             # Maintain encoding parity for embedded fields if present
             if "devname" in serializable:
-                serializable["devname"] = gs_utils.base64_encode(serializable["devname"].encode('latin-1') if isinstance(serializable["devname"], str) else serializable["devname"])
+                val = serializable["devname"]
+                input_bytes = val.encode('latin-1') if isinstance(val, str) else val
+                serializable["devname"] = gs_utils.base64_encode(input_bytes).decode('latin-1')
             if "ingamesn" in serializable:
-                serializable["ingamesn"] = gs_utils.base64_encode(serializable["ingamesn"].encode('latin-1') if isinstance(serializable["ingamesn"], str) else serializable["ingamesn"])
+                val = serializable["ingamesn"]
+                input_bytes = val.encode('latin-1') if isinstance(val, str) else val
+                serializable["ingamesn"] = gs_utils.base64_encode(input_bytes).decode('latin-1')
             
             serialized = json.dumps(serializable)
             

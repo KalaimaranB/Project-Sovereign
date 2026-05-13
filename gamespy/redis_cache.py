@@ -19,8 +19,7 @@ class RedisGamespyCache(IGamespyCache):
     """
     def __init__(self, url=None):
         import os
-        self.url = url or os.environ.get("REDIS_URL") or "redis://localhost:6379/0"
-        self.url = url
+        self.url = url or os.environ.get("REDIS_URL") or "redis://redis:6379/0"
         self.r = None
 
     async def connect(self):
@@ -137,8 +136,7 @@ class RedisGamespyCacheSync:
     """
     def __init__(self, url=None):
         import os
-        self.url = url or os.environ.get("REDIS_URL") or "redis://localhost:6379/0"
-        self.url = url
+        self.url = url or os.environ.get("REDIS_URL") or "redis://redis:6379/0"
         self.r = None
 
     def connect(self):
