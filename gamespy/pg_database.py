@@ -245,10 +245,12 @@ class PostgresGamespyDatabase(IGamespyDatabase):
 
     async def is_banned(self, postdata):
         """Identifies prohibited system accesses anchoring ban registry."""
+        def _decode(v):
+            return v.decode('latin-1') if isinstance(v, bytes) else str(v)
         async with self.pool.acquire() as conn:
             val = await conn.fetchval(
                 "SELECT COUNT(*) FROM banned WHERE gameid = $1 AND ipaddr = $2",
-                postdata['gamecd'][:-1], postdata['ipaddr']
+                _decode(postdata['gamecd'])[:-1], _decode(postdata['ipaddr'])
             )
             return int(val) > 0
 
@@ -293,13 +295,20 @@ class PostgresGamespyDatabase(IGamespyDatabase):
                     break
             
             # 2. Preparation of serialized payload
-            # Maintain encoding parity for embedded fields if present
-            if "devname" in data:
-                data["devname"] = gs_utils.base64_encode(data["devname"])
-            if "ingamesn" in data:
-                data["ingamesn"] = gs_utils.base64_encode(data["ingamesn"])
+            # Decode any bytes values before JSON serialization (qs_to_dict returns bytes)
+            def _safe_val(v):
+                if isinstance(v, bytes):
+                    return v.decode('latin-1')
+                return v
+            serializable = {k: _safe_val(v) for k, v in data.items()}
             
-            serialized = json.dumps(data)
+            # Maintain encoding parity for embedded fields if present
+            if "devname" in serializable:
+                serializable["devname"] = gs_utils.base64_encode(serializable["devname"].encode('latin-1') if isinstance(serializable["devname"], str) else serializable["devname"])
+            if "ingamesn" in serializable:
+                serializable["ingamesn"] = gs_utils.base64_encode(serializable["ingamesn"].encode('latin-1') if isinstance(serializable["ingamesn"], str) else serializable["ingamesn"])
+            
+            serialized = json.dumps(serializable)
             
             # 3. Check for existing user row enabling atomic merge-update
             exists = await conn.fetchrow("SELECT userid FROM nas_logins WHERE userid = $1", str(userid))
