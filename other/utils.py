@@ -400,5 +400,5 @@ def dict_to_qs(d):
             v = str(v).encode('latin-1')
         ret[k] = base64.b64encode(v).replace(b"=", b"*").decode('latin-1')
 
-    qs = "&".join(f"{k}={v}" for k, v in ret.items())
+    qs = "&".join(f"{k.decode('latin-1') if isinstance(k, bytes) else k}={v}" for k, v in ret.items())
     return qs.encode('latin-1') + b"\r\n"
