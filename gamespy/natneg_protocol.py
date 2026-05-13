@@ -58,10 +58,12 @@ class NatNegProtocol:
         # Validation check
         if not raw_data.startswith(self.MAGIC):
             logger.error("Dropped packet: Invalid MAGIC header from %s", addr)
+            logger.debug("%s", utils.pretty_print_hex(raw_data))
             return effects
             
         if len(raw_data) < 8:
              logger.error("Dropped packet: Header too short from %s", addr)
+             logger.debug("%s", utils.pretty_print_hex(raw_data))
              return effects
              
         command_opcode = raw_data[7]
@@ -75,6 +77,8 @@ class NatNegProtocol:
         }
         cmd_label = opcode_map.get(command_opcode, f"OP_{command_opcode:02X}")
         metrics.record_packet('natneg', cmd_label)
+        logger.debug("Connection from %s:%d (cmd=%s)...", addr[0], addr[1], cmd_label)
+        logger.debug("%s", utils.pretty_print_hex(raw_data))
         
         handler = self.nn_commands.get(command_opcode, self._handle_unknown)
         
@@ -83,6 +87,11 @@ class NatNegProtocol:
         except Exception:
             logger.error("Failed processing NATNEG command 0x%02X from %s: %s", 
                          command_opcode, addr, traceback.format_exc())
+        
+        # Log all outgoing responses
+        for effect in effects:
+            logger.debug("Sending response to %s:%d...", effect.addr[0], effect.addr[1])
+            logger.debug("%s", utils.pretty_print_hex(effect.data))
                          
         return effects
 

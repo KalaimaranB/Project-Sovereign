@@ -104,6 +104,7 @@ class ProfileProtocol:
         try:
             # Auto normalize to string using latin-1 to mirror original Python 2 flow precisely
             current_str = chunk.decode('latin-1') if isinstance(chunk, bytes) else chunk
+            logger.debug("RESPONSE: '%s'...", current_str[:200])  # Log raw received data (truncated)
             
             full_data = self.remaining_message + current_str
             
@@ -139,6 +140,10 @@ class ProfileProtocol:
                     res = await handler(cmd)
                     if res:
                         effects.extend(res)
+                        for eff in res:
+                            if isinstance(eff, ResponseEffect):
+                                self._log(logging.DEBUG, "SENDING: '%s'...",
+                                          eff.data.decode('latin-1', errors='replace')[:200])
                 else:
                     self._log(logging.ERROR, "Unknown protocol command rejected: '%s'", cmd.get('__cmd__'))
                     
@@ -201,6 +206,7 @@ class ProfileProtocol:
 
         # Successful Login
         self.profileid = profileid
+        self._log(logging.INFO, "Login success: profileid=%d uniquenick=%s", profileid, uniquenick)
         eff.append(StateUpdateEffect('register_global_session', profileid))
         
         # Pull relationships (Updated to use accurate legacy names)
@@ -243,6 +249,7 @@ class ProfileProtocol:
 
     async def _perform_logout(self, data):
         eff = []
+        self._log(logging.INFO, "Client disconnected")
         self.status = "0"
         self.statstring = "Offline"
         eff.extend(await self._yield_status_to_friends())
