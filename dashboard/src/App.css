@@ -35,9 +35,9 @@
   font-family: var(--font-mono);
   padding: 4px 8px;
   border-radius: 4px;
-  background: rgba(0, 242, 254, 0.1);
-  border: 1px solid rgba(0, 242, 254, 0.2);
-  color: var(--accent-cyan);
+  background: rgba(255, 42, 42, 0.1);
+  border: 1px solid rgba(255, 42, 42, 0.2);
+  color: var(--accent-red);
 }
 
 .system-status {
@@ -201,9 +201,9 @@
 }
 
 .filter-btn.active {
-  background: rgba(79, 172, 254, 0.15);
-  border-color: var(--accent-blue);
-  color: var(--accent-cyan);
+  background: rgba(255, 42, 42, 0.15);
+  border-color: var(--accent-red);
+  color: #ff8888;
 }
 
 .console-lines {
@@ -244,26 +244,33 @@
 }
 
 .srv-nas {
-  background: rgba(79, 172, 254, 0.1);
-  color: #4facfe;
+  background: rgba(42, 117, 255, 0.1);
+  color: #2a75ff;
 }
 
 .srv-profile {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+  background: rgba(42, 255, 117, 0.1);
+  color: #2aff75;
 }
 
 .srv-natneg {
-  background: rgba(234, 179, 8, 0.1);
-  color: #eab308;
+  background: rgba(255, 204, 0, 0.1);
+  color: #ffcc00;
+}
+
+.srv-tcpdump {
+  background: rgba(255, 42, 42, 0.15);
+  color: #ff2a2a;
+  border: 1px solid rgba(255, 42, 42, 0.3);
 }
 
 .log-msg {
-  color: #cbd5e0;
+  color: #94a3b8;
 }
 
 .lvl-error .log-msg {
   color: var(--accent-red);
+  font-weight: 600;
 }
 
 .lvl-warn .log-msg {
@@ -394,9 +401,9 @@
 }
 
 .patch-btn {
-  background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-cyan) 100%);
-  border: none;
-  color: #050508;
+  background: linear-gradient(135deg, var(--accent-red) 0%, #aa0000 100%);
+  border: 1px solid #ff2a2a;
+  color: #ffffff;
   padding: 0.875rem;
   border-radius: 8px;
   font-weight: 700;
@@ -409,12 +416,12 @@
   justify-content: center;
   gap: 0.5rem;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 12px rgba(0, 242, 254, 0.15);
+  box-shadow: 0 4px 12px rgba(255, 42, 42, 0.2);
 }
 
 .patch-btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 242, 254, 0.3);
+  box-shadow: 0 6px 20px rgba(255, 42, 42, 0.4);
 }
 
 .patch-btn:active:not(:disabled) {

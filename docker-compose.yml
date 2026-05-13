@@ -82,10 +82,12 @@ services:
     restart: always
     command: python services/gamespy_server_browser_server.py
     environment:
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
       - REDIS_URL=redis://sovereign_redis:6379/0
     ports:
       - "28910:28910"
     depends_on:
+      - postgres
       - redis
     volumes:
       - sovereign_logs:/app/logs
@@ -227,6 +229,28 @@ services:
     restart: always
     ports:
       - "5173:5173"
+
+  sovereign_dns:
+    build: .
+    container_name: sovereign_dns
+    restart: always
+    command: python services/dns_server.py
+    environment:
+      - DWC_HOST=10.8.0.1
+    ports:
+      - "53:53/udp"
+    volumes:
+      - sovereign_logs:/app/logs
+
+  sovereign_tcpdump:
+    image: nicolaka/netshoot
+    container_name: sovereign_tcpdump
+    restart: always
+    network_mode: "host"
+    command: >
+      sh -c "tcpdump -i any 'udp and (port 27900 or port 27901 or port 29900)' -l -nn -tt > /app/logs/tcpdump.log"
+    volumes:
+      - sovereign_logs:/app/logs
 
 volumes:
   postgres_data:

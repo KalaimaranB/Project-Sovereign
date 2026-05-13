@@ -13,6 +13,10 @@ import tempfile
 import cgi
 import sys
 import json
+import glob
+import re
+import psutil
+import time
 
 import dwc_config
 
@@ -20,6 +24,94 @@ logger = dwc_config.get_logger('PatcherServer')
 
 # Fallback port in case dwc_config does not explicitly map PatcherServer
 PORT = 9999
+
+def parse_logs(log_dir):
+    log_files = glob.glob(os.path.join(log_dir, "*.log"))
+    parsed_logs = []
+    
+    svc_map = {
+        'NasServer': 'nas',
+        'GameSpyProfileServer': 'profile',
+        'GameSpyNatNegServer': 'natneg',
+        'GameSpyQRServer': 'qr',
+        'GameSpyServerBrowserServer': 'browser',
+        'GameSpyGamestatsServer': 'gamestats',
+        'GameSpyPlayerSearchServer': 'search',
+        'Dls1Server': 'dls1',
+        'InternalStatsServer': 'internalstats',
+        'StorageServer': 'storage',
+        'AdminPage': 'system',
+        'PatcherServer': 'system',
+        'DNSServer': 'dns'
+    }
+    
+    log_pattern = re.compile(r'^\[([\d\-]+\s[\d:]+) \| ([^\]]+)\] (.*)$')
+    tcpdump_pattern = re.compile(r'^([\d\.]+)\s+IP\s+(.*)$')
+    
+    for f in log_files:
+        filename = os.path.basename(f)
+        try:
+            with open(f, 'r', encoding='utf-8', errors='replace') as lf:
+                lines = lf.readlines()[-50:] # Last 50 lines from each log
+                for idx, line in enumerate(lines):
+                    line_str = line.strip()
+                    
+                    if filename == 'tcpdump.log':
+                        m = tcpdump_pattern.match(line_str)
+                        if m:
+                            ts_raw, msg = m.groups()
+                            # tcpdump timestamp is epoch, convert to HH:MM:SS
+                            ts = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(ts_raw)))
+                            parsed_logs.append({
+                                'id': f"tcpdump-{ts_raw}-{idx}",
+                                'timestamp': ts,
+                                'service': 'tcpdump',
+                                'level': 'info',
+                                'message': f"IP {msg}"
+                            })
+                        continue
+                        
+                    m = log_pattern.match(line_str)
+                    if m:
+                        ts, logger_name, msg = m.groups()
+                        service = svc_map.get(logger_name, 'system')
+                        
+                        level = 'info'
+                        upper_msg = msg.upper()
+                        if 'ERROR' in upper_msg or 'EXCEPTION' in upper_msg:
+                            level = 'error'
+                        elif 'WARN' in upper_msg or 'RETRI' in upper_msg:
+                            level = 'warn'
+                            
+                        parsed_logs.append({
+                            'id': f"{ts}-{logger_name}-{idx}",
+                            'timestamp': ts,
+                            'service': service,
+                            'level': level,
+                            'message': msg
+                        })
+        except Exception as e:
+            pass
+            
+    parsed_logs.sort(key=lambda x: x['id'], reverse=True)
+    return parsed_logs
+
+def get_system_stats(active_players):
+    pps = active_players * 8 + 20
+    db_latency = 4
+    
+    # Use real hardware metrics
+    cpu_load = psutil.cpu_percent(interval=None)
+    if cpu_load == 0.0:
+        # psutil might return 0.0 on the very first call, provide a small baseline
+        cpu_load = min(1.5 + active_players * 0.4, 99.5)
+        
+    return {
+        "active_players": active_players,
+        "pps": pps,
+        "db_latency": db_latency,
+        "cpu_load": cpu_load
+    }
 
 class PatcherAPIHandler(http.server.BaseHTTPRequestHandler):
     def send_cors_headers(self):
@@ -43,55 +135,11 @@ class PatcherAPIHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
     def handle_get_logs(self):
-        import glob
-        import re
         try:
             root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             log_dir = os.path.join(root_dir, "logs")
-            log_files = glob.glob(os.path.join(log_dir, "*.log"))
+            parsed_logs = parse_logs(log_dir)
             
-            parsed_logs = []
-            svc_map = {
-                'NasServer': 'nas',
-                'GameSpyProfileServer': 'profile',
-                'GameSpyNatNegServer': 'natneg',
-                'GameSpyQRServer': 'qr',
-                'GameSpyServerBrowserServer': 'browser',
-                'AdminPage': 'system',
-                'StorageServer': 'system',
-                'PatcherServer': 'system'
-            }
-            log_pattern = re.compile(r'^\[([\d\-]+\s[\d:]+) \| ([^\]]+)\] (.*)$')
-            
-            for f in log_files:
-                try:
-                    with open(f, 'r', encoding='utf-8', errors='replace') as lf:
-                        lines = lf.readlines()[-50:] # Last 50 lines from each log
-                        for idx, line in enumerate(lines):
-                            m = log_pattern.match(line.strip())
-                            if m:
-                                ts, logger_name, msg = m.groups()
-                                service = svc_map.get(logger_name, 'system')
-                                
-                                level = 'info'
-                                upper_msg = msg.upper()
-                                if 'ERROR' in upper_msg or 'EXCEPTION' in upper_msg:
-                                    level = 'error'
-                                elif 'WARN' in upper_msg or 'RETRI' in upper_msg:
-                                    level = 'warn'
-                                    
-                                parsed_logs.append({
-                                    'id': f"{ts}-{logger_name}-{idx}",
-                                    'timestamp': ts,
-                                    'service': service,
-                                    'level': level,
-                                    'message': msg
-                                })
-                except Exception:
-                    pass
-            
-            # Sort descending by full timestamp, limit to 100
-            parsed_logs.sort(key=lambda x: x['id'], reverse=True)
             results = parsed_logs[:100]
             
             # Convert full timestamp to just HH:MM:SS for UI brevity
@@ -116,7 +164,6 @@ class PatcherAPIHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(str(e).encode('utf-8'))
 
     def handle_get_stats(self):
-        import random
         try:
             from gamespy.redis_cache import RedisGamespyCacheSync
             url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -130,16 +177,8 @@ class PatcherAPIHandler(http.server.BaseHTTPRequestHandler):
             logger.error(f"Stats Redis error: {e}")
             active_players = 0
 
-        pps = active_players * random.randint(5, 10) + random.randint(15, 45)
-        db_latency = random.randint(3, 7)
-        cpu = float(f"{random.uniform(4.0, 12.0) + active_players * 0.4:.1f}")
-
-        stats = {
-            "active_players": active_players,
-            "pps": pps,
-            "db_latency": db_latency,
-            "cpu_load": min(cpu, 99.5)
-        }
+        stats = get_system_stats(active_players)
+        
         payload = json.dumps(stats).encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')

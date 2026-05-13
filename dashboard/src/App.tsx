@@ -56,7 +56,7 @@ export default function App() {
   const [dbLatency, setDbLatency] = useState(8);
   const [cpuLoad, setCpuLoad] = useState(24.5);
   const [logs, setLogs] = useState<Log[]>([]);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'nas' | 'profile' | 'natneg' | 'qr' | 'browser' | 'system'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'nas' | 'profile' | 'natneg' | 'qr' | 'browser' | 'system' | 'tcpdump' | 'dns'>('all');
   const [autoScroll, setAutoScroll] = useState(true);
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   
@@ -293,8 +293,8 @@ export default function App() {
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorPps" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--accent-blue)" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="var(--accent-blue)" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="var(--accent-red)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="var(--accent-red)" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
@@ -324,7 +324,7 @@ export default function App() {
                 <Area 
                   type="monotone" 
                   dataKey="pps" 
-                  stroke="var(--accent-blue)" 
+                  stroke="var(--accent-red)" 
                   strokeWidth={2}
                   fillOpacity={1} 
                   fill="url(#colorPps)" 
@@ -513,6 +513,8 @@ export default function App() {
               <button className={`filter-btn ${activeFilter === 'qr' ? 'active' : ''}`} onClick={() => setActiveFilter('qr')}>QR</button>
               <button className={`filter-btn ${activeFilter === 'browser' ? 'active' : ''}`} onClick={() => setActiveFilter('browser')}>BROWSER</button>
               <button className={`filter-btn ${activeFilter === 'system' ? 'active' : ''}`} onClick={() => setActiveFilter('system')}>SYSTEM</button>
+              <button className={`filter-btn ${activeFilter === 'tcpdump' ? 'active' : ''}`} onClick={() => setActiveFilter('tcpdump')}>TCPDUMP</button>
+              <button className={`filter-btn ${activeFilter === 'dns' ? 'active' : ''}`} onClick={() => setActiveFilter('dns')}>DNS</button>
             </div>
             <button 
               className={`filter-btn ${autoScroll ? 'active' : ''}`} 

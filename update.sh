@@ -45,6 +45,8 @@ SERVICES=(
   sovereign_stats_http
   sovereign_patcher
   sovereign_dashboard
+  sovereign_dns
+  sovereign_tcpdump
 )
 
 for svc in "${SERVICES[@]}"; do
@@ -53,15 +55,20 @@ for svc in "${SERVICES[@]}"; do
     echo "    (skipping $svc — not found in compose file)"
 done
 
-# ---- 4. Verify all containers are up ----
+# ---- 4. Cleanup old Docker images ----
 echo ""
-echo "[4/5] Verifying container health..."
+echo "[4/6] Cleaning up old Docker artifacts..."
+docker image prune -f
+
+# ---- 5. Verify all containers are up ----
+echo ""
+echo "[5/6] Verifying container health..."
 sleep 3
 docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 
-# ---- 5. Quick connectivity check ----
+# ---- 6. Quick connectivity check ----
 echo ""
-echo "[5/5] Connectivity checks..."
+echo "[6/6] Connectivity checks..."
 
 NAS_URL="http://localhost:9000/"
 STATS_URL="http://localhost:9001/json"
