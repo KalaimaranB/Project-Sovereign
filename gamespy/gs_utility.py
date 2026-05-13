@@ -144,21 +144,29 @@ async def login_profile_via_parsed_authtoken(authtoken_parsed, db):
     """
     if authtoken_parsed is None or 'userid' not in authtoken_parsed:
         return None, None, None, None
-    
+
     console = 0
-    userid = int(authtoken_parsed.get('userid', 0))
-    password = authtoken_parsed.get('passwd', '')
-    gsbrcd = authtoken_parsed.get('gsbrcd', '')
-    uniquenick = authtoken_parsed.get('uniquenick', '')
-    console = int(authtoken_parsed.get('console', 0))
-    csnum = authtoken_parsed.get('csnum', '')
-    cfc = authtoken_parsed.get('cfc', '')
-    bssid = authtoken_parsed.get('bssid', '')
-    devname = authtoken_parsed.get('devname', b'')
-    birth = authtoken_parsed.get('birth', '')
-    gameid = authtoken_parsed.get('gameid', '')
+    userid = authtoken_parsed['userid']
+
+    csnum = authtoken_parsed.get('csnum', '')      # Wii: Serial number
+    cfc = authtoken_parsed.get('cfc', '')          # Wii: Friend code
+    bssid = authtoken_parsed.get('bssid', '')      # NDS: Wifi network's BSSID
+    devname = authtoken_parsed.get('devname', '')  # NDS: Device name
+    birth = authtoken_parsed.get('birth', '')      # NDS: User's birthday
+
+    # The Wii does not send 'passwd' — use gsbrcd as the password instead.
+    # This matches the reference barronwaffles implementation exactly.
+    if 'passwd' not in authtoken_parsed:
+        console = 1
+
+    password = authtoken_parsed['gsbrcd']
+    gsbrcd = authtoken_parsed['gsbrcd']
+    gameid = gsbrcd[:4]
     macadr = authtoken_parsed.get('macadr', '')
 
+    # uniquenick is always computed as base32(userid) + gsbrcd — never taken from the token.
+    # This ensures consistent uniquenick across re-registrations.
+    uniquenick = utils.base32_encode(int(userid)) + gsbrcd
     email = uniquenick + "@nds"  # The Wii also seems to use @nds.
 
     if "csnum" in authtoken_parsed:

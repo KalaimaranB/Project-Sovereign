@@ -157,15 +157,13 @@ class ProfileProtocol:
     async def _perform_login(self, data):
         eff = []
         
-        # Legacy authtoken parsing relies on direct hash routines we patched previously.
-        # We need to make sure it interfaces with DB async if it accesses it!
-        # Wait, looking at gs_utility.parse_authtoken... let's keep it clean for now.
         authtoken_parsed = await gs_utility.parse_authtoken(data.get('authtoken', ''), self.db)
         
         if authtoken_parsed is None:
              self._log(logging.WARNING, "Auth token invalid for login attempt.")
              msg = gs_query.create_gamespy_message([
                 ('__cmd__', "error"),
+                ('__cmd_val__', ""),
                 ('err', '266'),
                 ('fatal', ''),
                 ('errmsg', 'There was an error validating the pre-authentication.'),
@@ -173,6 +171,9 @@ class ProfileProtocol:
              ])
              eff.append(ResponseEffect(msg.encode('latin-1')))
              return eff
+
+        if 'sdkrevision' in data:
+            self.sdkrevision = data['sdkrevision']
              
         userid, profileid, gsbrcd, uniquenick = await gs_utility.login_profile_via_parsed_authtoken(authtoken_parsed, self.db)
         self.gameid = gsbrcd[:4] if gsbrcd else ""
@@ -190,6 +191,20 @@ class ProfileProtocol:
                 ('err', '266'),
                 ('fatal', ''),
                 ('errmsg', 'Invalid response.'),
+                ('id', data.get('id', '1')),
+            ])
+            eff.append(ResponseEffect(msg.encode('latin-1')))
+            return eff
+
+        # Handle failed login — matches reference error 256
+        if profileid is None:
+            self._log(logging.INFO, "Invalid password or banned user")
+            msg = gs_query.create_gamespy_message([
+                ('__cmd__', "error"),
+                ('__cmd_val__', ""),
+                ('err', '256'),
+                ('fatal', ''),
+                ('errmsg', 'Login failed.'),
                 ('id', data.get('id', '1')),
             ])
             eff.append(ResponseEffect(msg.encode('latin-1')))
@@ -213,24 +228,49 @@ class ProfileProtocol:
         self.buddies = await self.db.get_buddy_list(profileid)
         self.blocked = await self.db.get_blocked_list(profileid)
         
-        # Fixed to legacy mapping (requires ticket string placeholder from auth)
-        loginticket = authtoken_parsed.get('authtoken', 'NONE')
+        # Generate a proper random loginticket — reference never reuses authtoken
+        loginticket = gs_utility.base64_encode(
+            utils.generate_random_str(16).encode('latin-1')
+        ).decode('latin-1')
         self.sesskey = await self.db.create_session(self.profileid, loginticket)
         
         proof = gs_utility.generate_proof(
              self.challenge, authtoken_parsed.get('challenge', ''),
              data.get('challenge', ''), data.get('authtoken', '')
         )
-        
+
+        # sdkrevision 11 (Tatsunoko vs Capcom): send blk/bdy before lc\2
+        if self.sdkrevision == "11":
+            def make_id_list(lst):
+                return [str(d['buddyProfileId']) for d in lst if d.get('status') == 1]
+
+            block_list = make_id_list(self.blocked)
+            blk_msg = gs_query.create_gamespy_message([
+                ('__cmd__', "blk"), ('__cmd_val__', str(len(block_list))),
+                ('list', ','.join(block_list)),
+            ])
+            self._log(logging.DEBUG, "SENDING: %s", blk_msg)
+            eff.append(ResponseEffect(blk_msg.encode('latin-1')))
+
+            buddy_list = make_id_list(self.buddies)
+            bdy_msg = gs_query.create_gamespy_message([
+                ('__cmd__', "bdy"), ('__cmd_val__', str(len(buddy_list))),
+                ('list', ','.join(buddy_list)),
+            ])
+            self._log(logging.DEBUG, "SENDING: %s", bdy_msg)
+            eff.append(ResponseEffect(bdy_msg.encode('latin-1')))
+
         login_res = gs_query.create_gamespy_message([
-            ('__cmd__', "login_response"), ('__cmd_val__', "1"),
-            ('p', str(self.profileid)),
-            ('uniquenick', uniquenick),
-            ('lt', gs_utility.base64_encode(authtoken_parsed['authtoken'].encode('latin-1')).decode('latin-1')),
+            ('__cmd__', "lc"), ('__cmd_val__', "2"),
+            ('sesskey', self.sesskey),
             ('proof', proof),
+            ('userid', str(userid)),
+            ('profileid', str(self.profileid)),
+            ('uniquenick', uniquenick),
+            ('lt', loginticket),
             ('id', data.get('id', '1')),
         ])
-        
+        self._log(logging.DEBUG, "SENDING: %s", login_res)
         eff.append(ResponseEffect(login_res.encode('latin-1')))
         
         # Pull buddies and notify online state
