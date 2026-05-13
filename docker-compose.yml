@@ -20,6 +20,7 @@ services:
 
   sovereign_nas:
     build: .
+    image: sovereign-backend:latest
     container_name: sovereign_nas
     restart: always
     command: python services/nas_server.py
@@ -32,10 +33,11 @@ services:
     depends_on:
       - postgres
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_qr:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_qr
     restart: always
     command: python services/gamespy_qr_server.py
@@ -46,10 +48,11 @@ services:
     depends_on:
       - postgres
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_profile:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_profile
     restart: always
     command: python services/gamespy_profile_server.py
@@ -61,10 +64,11 @@ services:
     depends_on:
       - postgres
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_natneg:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_natneg
     restart: always
     command: python services/gamespy_natneg_server.py
@@ -74,10 +78,11 @@ services:
     depends_on:
       - postgres
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_browser:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_browser
     restart: always
     command: python services/gamespy_server_browser_server.py
@@ -90,10 +95,11 @@ services:
       - postgres
       - redis
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_player_search:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_player_search
     restart: always
     command: python services/gamespy_player_search_server.py
@@ -104,10 +110,11 @@ services:
     depends_on:
       - postgres
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_gamestats:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_gamestats
     restart: always
     command: python services/gamespy_gamestats_server.py
@@ -118,66 +125,73 @@ services:
     depends_on:
       - postgres
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_dls1:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_dls1
     restart: always
     command: python services/dls1_server.py
     ports:
       - "9003:9003"
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_storage:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_storage
     restart: always
     command: python services/storage_server.py
     ports:
       - "8000:8000"
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_register:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_register
     restart: always
     command: python services/register_page.py
     ports:
       - "9998:9998"
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_admin:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_admin
     restart: always
     command: python services/admin_page_server.py
     ports:
       - "9009:9009"
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_internal_stats:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_internal_stats
     restart: always
     command: python services/internal_stats_server.py
     ports:
       - "9001:9001"
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_stats_http:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_stats_http
     restart: always
     command: python services/gamestats_server_http.py
     ports:
       - "9002:9002"
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_proxy:
@@ -214,7 +228,7 @@ services:
       - net.ipv4.ip_forward=1
 
   sovereign_patcher:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_patcher
     restart: always
     command: sh -c "gcc -O3 -Wall -o /app/tools/sovereign_patcher /app/tools/nossl_patch_arm9.c && python /app/services/patcher_server.py"
@@ -225,6 +239,7 @@ services:
     depends_on:
       - redis
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_dashboard:
@@ -233,9 +248,12 @@ services:
     restart: always
     ports:
       - "5173:5173"
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
 
   sovereign_dns:
-    build: .
+    image: sovereign-backend:latest
     container_name: sovereign_dns
     restart: always
     command: python services/dns_server.py
@@ -244,6 +262,7 @@ services:
     ports:
       - "53:53/udp"
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
   sovereign_tcpdump:
@@ -254,6 +273,7 @@ services:
     command: >
       sh -c "tcpdump -i any 'udp and (port 27900 or port 27901 or port 29900)' -l -nn -tt > /app/logs/tcpdump.log"
     volumes:
+      - ./:/app
       - sovereign_logs:/app/logs
 
 volumes:

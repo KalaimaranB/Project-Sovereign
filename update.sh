@@ -54,7 +54,7 @@ SERVICES=(
 
 for svc in "${SERVICES[@]}"; do
   echo "  → Restarting $svc..."
-  docker compose up -d --no-deps --force-recreate "$svc" 2>/dev/null || \
+  docker compose restart "$svc" 2>/dev/null || \
     echo "    (skipping $svc — not found in compose file)"
 done
 
