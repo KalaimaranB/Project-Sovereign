@@ -25,8 +25,8 @@ services:
     restart: always
     command: python services/nas_server.py
     environment:
-      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
-      - REDIS_URL=redis://sovereign_redis:6379/0
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "9000:9000"
       - "80:9000"
@@ -42,8 +42,8 @@ services:
     restart: always
     command: python services/gamespy_qr_server.py
     environment:
-      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
-      - REDIS_URL=redis://sovereign_redis:6379/0
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
+      - REDIS_URL=redis://redis:6379/0
       - TRUST_ALL_PROXIES=1
     depends_on:
       - postgres
@@ -57,8 +57,8 @@ services:
     restart: always
     command: python services/gamespy_profile_server.py
     environment:
-      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
-      - REDIS_URL=redis://sovereign_redis:6379/0
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "29900:29900"
     depends_on:
@@ -73,7 +73,7 @@ services:
     restart: always
     command: python services/gamespy_natneg_server.py
     environment:
-      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
       - TRUST_ALL_PROXIES=1
     depends_on:
       - postgres
@@ -87,8 +87,8 @@ services:
     restart: always
     command: python services/gamespy_server_browser_server.py
     environment:
-      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
-      - REDIS_URL=redis://sovereign_redis:6379/0
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "28910:28910"
     depends_on:
@@ -104,7 +104,7 @@ services:
     restart: always
     command: python services/gamespy_player_search_server.py
     environment:
-      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
     ports:
       - "29901:29901"
     depends_on:
@@ -119,11 +119,13 @@ services:
     restart: always
     command: python services/gamespy_gamestats_server.py
     environment:
-      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@sovereign_db:5432/gamespy
+      - DATABASE_URL=postgresql://dwc_admin:insecure_dev_password@postgres:5432/gamespy
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "29920:29920"
     depends_on:
       - postgres
+      - redis
     volumes:
       - ./:/app
       - sovereign_logs:/app/logs
@@ -177,8 +179,12 @@ services:
     container_name: sovereign_internal_stats
     restart: always
     command: python services/internal_stats_server.py
+    environment:
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "9001:9001"
+    depends_on:
+      - redis
     volumes:
       - ./:/app
       - sovereign_logs:/app/logs
@@ -188,8 +194,12 @@ services:
     container_name: sovereign_stats_http
     restart: always
     command: python services/gamestats_server_http.py
+    environment:
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "9002:9002"
+    depends_on:
+      - redis
     volumes:
       - ./:/app
       - sovereign_logs:/app/logs
@@ -233,7 +243,7 @@ services:
     restart: always
     command: sh -c "gcc -O3 -Wall -o /app/tools/sovereign_patcher /app/tools/nossl_patch_arm9.c && python /app/services/patcher_server.py"
     environment:
-      - REDIS_URL=redis://sovereign_redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "9999:9999"
     depends_on:

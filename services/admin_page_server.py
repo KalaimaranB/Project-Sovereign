@@ -63,7 +63,7 @@ if os.path.exists('adminpageconf.json'):
         admin_username = None
         admin_password = None
 else:
-    logger.log(logging.INFO,
+    logger.log(logging.DEBUG,
                "adminpageconf.json not found. "
                "Admin page will not be available.")
 

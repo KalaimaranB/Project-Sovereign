@@ -22,10 +22,11 @@ git fetch --all
 git pull --rebase
 git stash pop || true
 
-# ---- 2. Rebuild containers that changed ----
+# ---- 2. Apply configuration changes ----
 echo ""
-echo "[2/5] Rebuilding changed containers..."
+echo "[2/5] Applying configuration changes and building if necessary..."
 docker compose build --parallel
+docker compose up -d --remove-orphans
 
 # ---- 3. Apply rolling restart (zero-downtime for databases) ----
 echo ""
