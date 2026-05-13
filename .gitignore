@@ -79,3 +79,4 @@ env/
 *.local
 *.secret
 secret/
+tests/cross_validation/reference_repo/
